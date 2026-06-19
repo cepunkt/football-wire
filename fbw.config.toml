@@ -1,0 +1,22 @@
+# football-wire configuration
+# Copy and modify as needed. Search order:
+#   1. --config CLI arg
+#   2. FBW_CONFIG env var
+#   3. ./fbw.config.toml (this file)
+#   4. ~/.config/fbw/config.toml
+
+[paths]
+data_dir = "data"
+
+[source.fifa]
+base_url = "https://api.fifa.com/api/v3"
+competition_id = "17"
+season_id = "285023"
+stage_id = "289273"
+poll_interval = 10
+trust = "low"
+
+[display]
+delay = 90          # anti-spoiler delay in seconds (0 = disabled)
+stats_interval = 15 # match minutes between stats blocks (0 = disabled)
+preamble = true     # emit context notes before match header
