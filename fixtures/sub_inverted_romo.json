@@ -1,0 +1,28 @@
+{
+  "EventId": "645072139",
+  "IdTeam": "43911",
+  "IdPlayer": "430763",
+  "IdSubPlayer": "461177",
+  "Timestamp": "2026-06-19T02:30:02.282Z",
+  "MatchMinute": "71'",
+  "Period": 5,
+  "HomeGoals": 1,
+  "AwayGoals": 0,
+  "Type": 5,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Substitution"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "Luis ROMO (in) comes off the bench to replace VARGAS (out) (Mexico)"
+    }
+  ],
+  "_logged_at": "2026-06-19T02:30:24.694748+00:00"
+}

@@ -1,0 +1,28 @@
+{
+  "EventId": "1419513003",
+  "IdTeam": "43899",
+  "IdPlayer": "416051",
+  "IdPerson": "416051",
+  "Timestamp": "2026-06-18T22:30:37.826Z",
+  "MatchMinute": "30'",
+  "Period": 3,
+  "HomeGoals": 2,
+  "AwayGoals": 0,
+  "Type": 12,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Attempt at Goal"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "PEDRO MIGUEL (Canada) attempts an effort on goal."
+    }
+  ],
+  "_logged_at": "2026-06-18T22:31:21.067419+00:00"
+}

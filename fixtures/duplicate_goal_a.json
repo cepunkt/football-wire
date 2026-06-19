@@ -1,0 +1,26 @@
+{
+  "EventId": "1124252903",
+  "IdTeam": "43899",
+  "Timestamp": "2026-06-18T23:36:22.309Z",
+  "MatchMinute": "75'",
+  "Period": 5,
+  "HomeGoals": 5,
+  "AwayGoals": 0,
+  "Type": 0,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Goal!"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "Canada score!"
+    }
+  ],
+  "_logged_at": "2026-06-18T23:36:41.940969+00:00"
+}

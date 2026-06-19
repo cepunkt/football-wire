@@ -1,0 +1,29 @@
+{
+  "EventId": "1959747882",
+  "IdTeam": "43822",
+  "IdPlayer": "448586",
+  "IdSubPlayer": "307849",
+  "IdSubTeam": "43822",
+  "Timestamp": "2026-06-19T02:16:29.41Z",
+  "MatchMinute": "57'",
+  "Period": 5,
+  "HomeGoals": 1,
+  "AwayGoals": 0,
+  "Type": 5,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Substitution"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "H G OH (in) comes off the bench to replace H M SON (out) (Korea Republic)"
+    }
+  ],
+  "_logged_at": "2026-06-19T02:17:22.779466+00:00"
+}

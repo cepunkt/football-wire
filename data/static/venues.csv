@@ -1,0 +1,17 @@
+stadium_name,city,country,capacity,altitude_m,roof,surface,nfl_stadium,latitude,longitude
+New York New Jersey Stadium,East Rutherford,USA,80663,1,false,hybrid,true,40.813778,-74.074310
+Dallas Stadium,Arlington,USA,70649,173,true,hybrid,true,32.747841,-97.093628
+Los Angeles Stadium,Inglewood,USA,70492,38,true,hybrid,true,33.953587,-118.339630
+Kansas City Stadium,Kansas City,USA,69045,257,false,hybrid,true,39.048786,-94.484566
+San Francisco Bay Area Stadium,Santa Clara,USA,68827,5,false,hybrid,true,37.403263,-121.969688
+Houston Stadium,Houston,USA,68777,15,true,hybrid,true,29.684722,-95.410707
+Philadelphia Stadium,Philadelphia,USA,68324,3,false,hybrid,true,39.900898,-75.168098
+Atlanta Stadium,Atlanta,USA,68239,307,true,hybrid,true,33.755489,-84.401993
+Seattle Stadium,Seattle,USA,66925,53,false,hybrid,true,47.595097,-122.332245
+Miami Stadium,Miami Gardens,USA,64478,2,false,hybrid,true,25.957960,-80.239311
+Boston Stadium,Foxborough,USA,64146,89,false,hybrid,true,42.090908,-71.264709
+Mexico City Stadium,Mexico City,MEX,80824,2240,false,hybrid,false,19.302999,-99.150665
+Estadio Monterrey,Guadalupe,MEX,51243,491,false,hybrid,false,25.669180,-100.244614
+Estadio Guadalajara,Zapopan,MEX,45664,1672,false,hybrid,false,20.681667,-103.462778
+BC Place Vancouver,Vancouver,CAN,52497,10,true,hybrid,false,49.276684,-123.112404
+Toronto Stadium,Toronto,CAN,43036,76,false,hybrid,false,43.633335,-79.418617

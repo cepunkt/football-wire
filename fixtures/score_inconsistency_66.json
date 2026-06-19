@@ -1,0 +1,27 @@
+{
+  "EventId": "561622227",
+  "IdTeam": "43899",
+  "IdPlayer": "423941",
+  "Timestamp": "2026-06-18T23:27:06.068Z",
+  "MatchMinute": "66'",
+  "Period": 5,
+  "HomeGoals": 4,
+  "AwayGoals": 0,
+  "Type": 0,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Goal!"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "Nathan SALIBA (Canada) scores!!"
+    }
+  ],
+  "_logged_at": "2026-06-18T23:27:23.076449+00:00"
+}

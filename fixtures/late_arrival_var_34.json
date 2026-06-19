@@ -1,0 +1,20 @@
+{
+  "EventId": "1602728073",
+  "Timestamp": "2026-06-18T22:34:17.482Z",
+  "MatchMinute": "34'",
+  "Period": 3,
+  "HomeGoals": 2,
+  "AwayGoals": 0,
+  "Type": 71,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "VAR"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [],
+  "_logged_at": "2026-06-18T22:34:23.748202+00:00"
+}

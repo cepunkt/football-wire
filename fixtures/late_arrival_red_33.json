@@ -1,0 +1,28 @@
+{
+  "EventId": "1705895087",
+  "IdTeam": "43834",
+  "IdPlayer": "419441",
+  "IdPerson": "419441",
+  "Timestamp": "2026-06-18T22:33:29.046Z",
+  "MatchMinute": "33'",
+  "Period": 3,
+  "HomeGoals": 2,
+  "AwayGoals": 0,
+  "Type": 3,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Red card"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "HOMAM AHMED (Qatar) is sent off!"
+    }
+  ],
+  "_logged_at": "2026-06-18T22:36:15.114568+00:00"
+}
