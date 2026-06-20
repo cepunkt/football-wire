@@ -118,7 +118,7 @@ class FeedEngine:
 
     def __init__(self, events_path: Path, enrichments_path: Path,
                  match: Match, delay: int = 0, cycle_interval: int = 10,
-                 stats_interval: int = 15):
+                 stats_interval: int = 15, log_path: Path | None = None):
         self.events_path = events_path
         self.enrichments_path = enrichments_path
         self.match = match
@@ -140,6 +140,20 @@ class FeedEngine:
         self._seen_dedup_keys: set[str] = set()
         self._last_minute: float = -1.0
         self._last_stats_minute: float = 0.0
+
+        # Feed log file (full history, no truncation)
+        self.log_path = log_path
+        self._log_file = None
+        if log_path:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._log_file = open(log_path, "a")
+
+    def emit(self, text: str):
+        """Emit to stdout (Monitor) and log file."""
+        print(text)
+        if self._log_file:
+            self._log_file.write(text + "\n")
+            self._log_file.flush()
 
     # --- Enrichment cache ---
 
@@ -221,12 +235,32 @@ class FeedEngine:
 
         events.sort(key=lambda e: (e.minute.value, e.logged_at))
 
+        # Emit catchup as compact summary + key events (not every foul)
+        # This prevents Monitor truncation on mid-match reconnect
+        key_types = {EventType.GOAL, EventType.PENALTY_GOAL, EventType.RED,
+                     EventType.SECOND_YELLOW_RED, EventType.YELLOW,
+                     EventType.SUB, EventType.VAR, EventType.PERIOD_START,
+                     EventType.PERIOD_END}
+        shot_types = {EventType.SHOT}
+
+        key_events = []
         for ev in events:
             if ev.minute.value >= 0:
                 self._last_minute = max(self._last_minute, ev.minute.value)
-            print(format_event(ev, self.match))
             if ev.event_id:
                 self._emitted[ev.event_id] = set()
+
+            # Key events: goals, cards, subs, VAR, periods
+            if ev.event_type in key_types:
+                key_events.append(ev)
+            # Shots only if they have coordinates (meaningful)
+            elif ev.event_type in shot_types and ev.shot_position:
+                key_events.append(ev)
+
+        if key_events:
+            print("[Catchup]")
+            for ev in key_events:
+                self.emit(format_event(ev, self.match))
 
         if events and self._last_minute > 0:
             self._last_stats_minute = self._last_minute
@@ -426,7 +460,7 @@ class FeedEngine:
             output.append(stats_block)
 
         if output:
-            print("\n".join(output))
+            self.emit("\n".join(output))
 
     def flush_all(self):
         """Emit everything remaining in the buffer."""
@@ -441,7 +475,7 @@ class FeedEngine:
         items.sort(key=lambda x: x[1])
         if items:
             lines = [fmt for fmt, _, _ in items]
-            print("\n".join(lines))
+            self.emit("\n".join(lines))
 
 
 # --- Commands ---
@@ -496,15 +530,22 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
             match.on_pitch.add(p.id)
         match.stats = MatchStats(match.home.abbreviation, match.away.abbreviation)
 
-    # Preamble + header
+    # Preamble + header (emit to both stdout and log)
+    header_parts = []
     if config.display.preamble:
-        print(format_preamble())
-    print(format_match_header(match))
+        header_parts.append(format_preamble())
+    header_parts.append(format_match_header(match))
     for team in [match.home, match.away]:
         profile = load_team_profile(team.abbreviation)
         if profile:
-            print()
-            print(profile)
+            header_parts.append("")
+            header_parts.append(profile)
+    header_text = "\n".join(header_parts)
+    print(header_text)
+    # Write header to log file too
+    if log_path:
+        with open(log_path, "w") as lf:
+            lf.write(header_text + "\n")
 
     # Wait for events
     if not raw_events_path.exists():
@@ -512,11 +553,17 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
         while not raw_events_path.exists():
             time.sleep(2)
 
+    # Feed log (full output, no truncation)
+    log_dir = config.paths.data_dir / "feeds"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{match_id}.md"
+
     # Engine
     engine = FeedEngine(
         raw_events_path, raw_enrichments_path, match,
         delay=delay, cycle_interval=cycle_interval,
         stats_interval=config.display.stats_interval,
+        log_path=log_path,
     )
 
     # Catchup
