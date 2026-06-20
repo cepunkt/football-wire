@@ -160,12 +160,20 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
             status_str = {0: "FT", 1: "Scheduled", 3: "Live"}.get(status, "?")
             log(f"  #{mid} {label} [{status_str}]")
 
+    # Build stage_id lookup from schedule
+    stage_ids: dict[str, str] = {}
+    for m in schedule:
+        mid = m.get("IdMatch", "")
+        sid = m.get("IdStage", "")
+        if mid and sid:
+            stage_ids[mid] = sid
+
     # Initial fetch for all tracked matches
     tracked: dict[str, dict] = {}
     finished: set[str] = set()
 
     for mid in track_ids:
-        live_data = pull_match(mid, config, log_fn=log)
+        live_data = pull_match(mid, stage_id=stage_ids.get(mid), config=config, log_fn=log)
         if live_data:
             status = live_data.get("MatchStatus", 1)
             score = _get_score(live_data)
@@ -204,7 +212,8 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
             if not _running:
                 break
 
-            live_data = pull_match(mid, config, log_fn=log)
+            live_data = pull_match(mid, stage_id=stage_ids.get(mid),
+                                   config=config, log_fn=log)
             if not live_data:
                 continue
 

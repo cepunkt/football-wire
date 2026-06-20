@@ -109,24 +109,40 @@ def fetch_schedule(config: Config | None = None) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
-def fetch_match(match_id: str, config: Config | None = None) -> dict:
-    """Fetch live match state."""
+def fetch_match(match_id: str, stage_id: str | None = None,
+                config: Config | None = None) -> dict:
+    """Fetch live match state.
+
+    Args:
+        match_id: FIFA match ID
+        stage_id: stage ID for this match (from schedule). Falls back to
+                  config default if not provided, but this will break for
+                  knockout matches if the config still has the group stage ID.
+    """
     if config is None:
         config = get_config()
+    sid = stage_id or config.source.stage_id
     return api_get(
         f"live/football/{config.source.competition_id}/"
-        f"{config.source.season_id}/{config.source.stage_id}/{match_id}",
+        f"{config.source.season_id}/{sid}/{match_id}",
         config,
     )
 
 
-def fetch_timeline(match_id: str, config: Config | None = None) -> dict:
-    """Fetch match timeline (events)."""
+def fetch_timeline(match_id: str, stage_id: str | None = None,
+                   config: Config | None = None) -> dict:
+    """Fetch match timeline (events).
+
+    Args:
+        match_id: FIFA match ID
+        stage_id: stage ID for this match (from schedule).
+    """
     if config is None:
         config = get_config()
+    sid = stage_id or config.source.stage_id
     return api_get(
         f"timelines/{config.source.competition_id}/"
-        f"{config.source.season_id}/{config.source.stage_id}/{match_id}",
+        f"{config.source.season_id}/{sid}/{match_id}",
         config,
     )
 
@@ -197,9 +213,13 @@ def store_events(match_id: str, timeline_data: dict,
 
 # --- High-level operations ---
 
-def pull_match(match_id: str, config: Config | None = None,
-               log_fn=None) -> dict | None:
+def pull_match(match_id: str, stage_id: str | None = None,
+               config: Config | None = None, log_fn=None) -> dict | None:
     """Fetch and store a single match (state + events).
+
+    Args:
+        match_id: FIFA match ID
+        stage_id: stage ID from schedule (required for knockouts)
 
     Returns the match data dict, or None on error.
     """
@@ -210,7 +230,7 @@ def pull_match(match_id: str, config: Config | None = None,
 
     # Fetch match state
     try:
-        match_data = fetch_match(match_id, config)
+        match_data = fetch_match(match_id, stage_id=stage_id, config=config)
     except requests.RequestException as e:
         log_fn(f"API error (match) #{match_id}: {e}")
         return None
@@ -219,7 +239,7 @@ def pull_match(match_id: str, config: Config | None = None,
 
     # Fetch and store timeline
     try:
-        timeline = fetch_timeline(match_id, config)
+        timeline = fetch_timeline(match_id, stage_id=stage_id, config=config)
         _, new_count = store_events(match_id, timeline, config)
         if new_count > 0:
             log_fn(f"#{match_id}: {new_count} new events")
@@ -277,7 +297,8 @@ def backfill(config: Config | None = None, force: bool = False,
                     and events_file.exists()):
                 continue
 
-        result = pull_match(mid, config, log_fn)
+        stage_id = m.get("IdStage", "")
+        result = pull_match(mid, stage_id=stage_id, config=config, log_fn=log_fn)
         if result:
             count += 1
             log_fn(f"  [{i}/{len(finished)}] #{mid} OK")
