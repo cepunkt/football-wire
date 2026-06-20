@@ -91,32 +91,43 @@ class Config:
 
 # --- Loader ---
 
-def _find_config_file(explicit_path: str | Path | None = None) -> Path | None:
-    """Locate config file using search order."""
-    # 1. Explicit path
-    if explicit_path:
-        p = Path(explicit_path)
-        if p.exists():
-            return p
+def _find_config_files(explicit_path: str | Path | None = None) -> list[Path]:
+    """Locate config files in layering order (first = base, last = override).
 
-    # 2. Env var
+    Returns list of existing config files to apply in order.
+    Later files override earlier ones.
+    """
+    files = []
+
+    # 1. User config (lowest priority)
+    user = Path.home() / ".config" / "fbw" / "config.toml"
+    if user.exists():
+        files.append(user)
+
+    # 2. Project config
+    cwd = Path.cwd() / "fbw.config.toml"
+    if cwd.exists():
+        files.append(cwd)
+
+    # 3. Local override (gitignored, personal settings)
+    local = Path.cwd() / "fbw.config.local.toml"
+    if local.exists():
+        files.append(local)
+
+    # 4. Env var (overrides project + local)
     env_path = os.environ.get("FBW_CONFIG")
     if env_path:
         p = Path(env_path)
         if p.exists():
-            return p
+            files.append(p)
 
-    # 3. Current directory
-    cwd = Path.cwd() / "fbw.config.toml"
-    if cwd.exists():
-        return cwd
+    # 5. Explicit path (highest priority)
+    if explicit_path:
+        p = Path(explicit_path)
+        if p.exists():
+            files.append(p)
 
-    # 4. User config
-    user = Path.home() / ".config" / "fbw" / "config.toml"
-    if user.exists():
-        return user
-
-    return None
+    return files
 
 
 def _apply_toml(config: Config, data: dict) -> None:
@@ -163,19 +174,18 @@ def _apply_env(config: Config) -> None:
 def load_config(config_path: str | Path | None = None) -> Config:
     """Load configuration with full layering.
 
-    defaults → config file → env vars
+    defaults → user config → project config → local config → env var → explicit path → env vars
     CLI args are applied by the caller after this returns.
     """
     config = Config()
 
-    # Config file
-    path = _find_config_file(config_path)
-    if path:
+    # Apply config files in order (later overrides earlier)
+    for path in _find_config_files(config_path):
         with open(path, "rb") as f:
             toml_data = tomllib.load(f)
         _apply_toml(config, toml_data)
 
-    # Env vars
+    # Env vars (override everything except CLI args)
     _apply_env(config)
 
     return config

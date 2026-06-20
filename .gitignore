@@ -19,6 +19,9 @@ data/processed/
 # May contain FIFA stats, news data, manual observations. Not publishable.
 data/aggregate/
 
+# Local config (personal overrides, not committed)
+fbw.config.local.toml
+
 # IDE
 .vscode/
 .idea/
