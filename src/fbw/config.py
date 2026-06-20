@@ -53,6 +53,14 @@ class PathsConfig:
         return self.data_dir / "raw" / "api-fifa" / "events"
 
     @property
+    def raw_timelines_dir(self) -> Path:
+        return self.data_dir / "raw" / "api-fifa" / "timelines"
+
+    @property
+    def raw_enrichments_dir(self) -> Path:
+        return self.data_dir / "raw" / "api-fifa" / "enrichments"
+
+    @property
     def processed_dir(self) -> Path:
         return self.data_dir / "processed"
 

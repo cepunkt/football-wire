@@ -44,7 +44,9 @@ def _ensure_dirs(config: Config) -> None:
     """Create raw data directories if they don't exist."""
     for d in [config.paths.raw_api_dir,
               config.paths.raw_matches_dir,
-              config.paths.raw_events_dir]:
+              config.paths.raw_events_dir,
+              config.paths.raw_timelines_dir,
+              config.paths.raw_enrichments_dir]:
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -211,6 +213,99 @@ def store_events(match_id: str, timeline_data: dict,
     return filepath, new_count
 
 
+# --- Timeline snapshots and enrichment detection ---
+
+# Fields that the API may enrich after initial delivery
+_ENRICHABLE_FIELDS = [
+    "IdPlayer", "IdTeam", "EventDescription",
+    "PositionX", "PositionY", "GoalGatePositionX", "GoalGatePositionY",
+]
+
+
+def store_timeline_snapshot(match_id: str, timeline_data: dict,
+                            config: Config | None = None) -> Path:
+    """Store full timeline as a snapshot (overwritten each poll).
+
+    This is the 'latest known state' of all events. Unlike the
+    append-only JSONL, this always has the most enriched data.
+    """
+    if config is None:
+        config = get_config()
+    _ensure_dirs(config)
+    path = config.paths.raw_timelines_dir / f"{match_id}.json"
+    _write_json(path, timeline_data)
+    return path
+
+
+def detect_enrichments(match_id: str, new_timeline: dict,
+                       config: Config | None = None,
+                       log_fn=None) -> list[dict]:
+    """Diff new timeline against stored snapshot. Returns enrichment records.
+
+    An enrichment is a field that changed from null/empty to a value,
+    or changed from one value to another, on an existing event.
+    """
+    if config is None:
+        config = get_config()
+    if log_fn is None:
+        log_fn = lambda msg: None
+
+    old_path = config.paths.raw_timelines_dir / f"{match_id}.json"
+    old_data = _read_json(old_path)
+
+    if not old_data:
+        return []
+
+    # Build lookup of old events by EventId
+    old_events = {}
+    for ev in old_data.get("Event", []):
+        eid = ev.get("EventId", "")
+        if eid:
+            old_events[eid] = ev
+
+    enrichments = []
+    now = datetime.now(timezone.utc).isoformat()
+
+    for ev in new_timeline.get("Event", []):
+        eid = ev.get("EventId", "")
+        if not eid or eid not in old_events:
+            continue
+
+        old_ev = old_events[eid]
+        for field in _ENRICHABLE_FIELDS:
+            old_val = old_ev.get(field)
+            new_val = ev.get(field)
+
+            # Detect enrichment: null/empty → value, or value changed
+            if new_val is not None and new_val != old_val:
+                # For EventDescription, compare the actual text
+                if field == "EventDescription":
+                    old_desc = _get_name(old_val) if old_val else ""
+                    new_desc = _get_name(new_val) if new_val else ""
+                    if old_desc == new_desc:
+                        continue
+
+                enrichments.append({
+                    "event_id": eid,
+                    "match_id": match_id,
+                    "field": field,
+                    "old": old_val,
+                    "new": new_val,
+                    "detected_at": now,
+                    "minute": ev.get("MatchMinute", ""),
+                    "type": ev.get("Type"),
+                })
+
+    if enrichments:
+        log_fn(f"#{match_id}: {len(enrichments)} enrichments detected")
+        # Append to enrichment queue
+        queue_path = config.paths.raw_enrichments_dir / f"{match_id}.jsonl"
+        for e in enrichments:
+            _append_jsonl(queue_path, e)
+
+    return enrichments
+
+
 # --- High-level operations ---
 
 def pull_match(match_id: str, stage_id: str | None = None,
@@ -240,9 +335,18 @@ def pull_match(match_id: str, stage_id: str | None = None,
     # Fetch and store timeline
     try:
         timeline = fetch_timeline(match_id, stage_id=stage_id, config=config)
+
+        # Append new events to JSONL (live feed)
         _, new_count = store_events(match_id, timeline, config)
         if new_count > 0:
             log_fn(f"#{match_id}: {new_count} new events")
+
+        # Detect enrichments by diffing against previous snapshot
+        detect_enrichments(match_id, timeline, config, log_fn)
+
+        # Store full timeline snapshot (overwrites previous)
+        store_timeline_snapshot(match_id, timeline, config)
+
     except requests.RequestException as e:
         log_fn(f"API error (timeline) #{match_id}: {e}")
 
