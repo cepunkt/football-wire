@@ -15,6 +15,10 @@ venv/
 data/raw/
 data/processed/
 
+# Aggregate data — combined from multiple sources including third-party
+# May contain FIFA stats, news data, manual observations. Not publishable.
+data/aggregate/
+
 # IDE
 .vscode/
 .idea/
