@@ -194,6 +194,13 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
     log("Initial fetch complete. Entering poll loop.")
     log("")
 
+    # ESPN polling setup (opt-in)
+    espn_enabled = config.sources.espn
+    espn_interval = config.sources.espn_interval
+    last_espn_poll = 0
+    if espn_enabled:
+        log(f"ESPN stats polling enabled (every {espn_interval}s)")
+
     # Main poll loop
     poll_count = 0
     while _running:
@@ -238,6 +245,23 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
 
                 # Refresh schedule for updated standings
                 schedule = pull_schedule(config, log_fn=log)
+
+            # ESPN stats polling (for live matches only)
+            if espn_enabled and status == 3:
+                now = time.time()
+                if now - last_espn_poll >= espn_interval:
+                    try:
+                        from .espn import poll_and_record
+                        home_tla = _team_abbr(_get_team(live_data, "home"))
+                        away_tla = _team_abbr(_get_team(live_data, "away"))
+                        row = poll_and_record(mid, home_tla, away_tla, config)
+                        if row:
+                            poss_h = row.get("home_possession", "?")
+                            poss_a = row.get("away_possession", "?")
+                            log(f"  ESPN: {home_tla} {poss_h}% - {poss_a}% {away_tla}")
+                        last_espn_poll = now
+                    except Exception as e:
+                        log(f"  ESPN error: {e}")
 
         update_live_state(tracked, config)
 

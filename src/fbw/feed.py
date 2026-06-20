@@ -394,6 +394,23 @@ class EventFileHandler(FileSystemEventHandler):
         current = self._last_minute
         if current > 0 and current - self._last_stats_minute >= self.stats_interval:
             minute_str = f"{int(current)}'"
+
+            # Try ESPN stats first (opt-in, more accurate)
+            config = get_config()
+            if config.sources.espn:
+                try:
+                    from .espn import get_latest_stats, format_espn_stats
+                    espn_row = get_latest_stats(
+                        self.match.match_id, config
+                    )
+                    if espn_row:
+                        print(format_espn_stats(espn_row, minute_str))
+                        self._last_stats_minute = current
+                        return
+                except Exception:
+                    pass
+
+            # Fallback: our computed stats
             print(format_stats(self.match.stats, minute_str))
             self._last_stats_minute = current
 

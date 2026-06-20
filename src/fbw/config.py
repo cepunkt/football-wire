@@ -74,6 +74,13 @@ class PathsConfig:
 
 
 @dataclass
+class SourcesConfig:
+    """Optional data source toggles."""
+    espn: bool = False          # opt-in ESPN stats polling
+    espn_interval: int = 60     # ESPN poll interval in seconds
+
+
+@dataclass
 class DisplayConfig:
     """Presentation settings for clients."""
     delay: int = 0              # anti-spoiler delay in seconds
@@ -86,6 +93,7 @@ class Config:
     """Top-level application configuration."""
     paths: PathsConfig = field(default_factory=PathsConfig)
     source: SourceConfig = field(default_factory=SourceConfig)
+    sources: SourcesConfig = field(default_factory=SourcesConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
 
 
@@ -147,6 +155,13 @@ def _apply_toml(config: Config, data: dict) -> None:
                      "poll_interval", "trust", "name"):
             if key in source_data:
                 setattr(config.source, key, source_data[key])
+
+    # [sources]
+    if "sources" in data:
+        sources = data["sources"]
+        for key in ("espn", "espn_interval"):
+            if key in sources:
+                setattr(config.sources, key, sources[key])
 
     # [display]
     if "display" in data:
