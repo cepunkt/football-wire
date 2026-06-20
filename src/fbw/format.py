@@ -275,6 +275,26 @@ def format_match_summary(match: Match, events: list[Event]) -> str:
         lines.append(f"  Attendance: {match.attendance:,}")
     if match.referee:
         lines.append(f"  Referee: {match.referee} ({match.referee_country})")
+
+    # Starting XI
+    pos_order = [Position.GK, Position.DF, Position.MF, Position.FW]
+    for team in [h, a]:
+        starters = team.starters
+        if not starters:
+            continue
+        starters.sort(key=lambda p: (p.position or Position.FW).value)
+        names_by_pos: dict[str, list[str]] = {}
+        for p in starters:
+            pos = str(p.position) if p.position is not None else "?"
+            names_by_pos.setdefault(pos, []).append(p.display_name)
+        sections = []
+        for pos in pos_order:
+            pos_name = str(pos)
+            if pos_name in names_by_pos:
+                sections.append(", ".join(names_by_pos[pos_name]))
+        formation = f" ({team.tactics})" if team.tactics else ""
+        lines.append(f"  {team.abbreviation}{formation}: {'; '.join(sections)}")
+
     lines.append("")
 
     # Goals
