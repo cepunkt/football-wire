@@ -1,0 +1,26 @@
+{
+  "EventId": "531135707",
+  "IdTeam": "43928",
+  "Timestamp": "2026-06-20T03:36:58.916Z",
+  "MatchMinute": "37'",
+  "Period": 3,
+  "HomeGoals": 0,
+  "AwayGoals": 1,
+  "Type": 2,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Yellow card"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "Paraguay have a player yellow carded."
+    }
+  ],
+  "_logged_at": "2026-06-20T03:38:51.343942+00:00"
+}

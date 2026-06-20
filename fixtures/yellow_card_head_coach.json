@@ -1,0 +1,28 @@
+{
+  "EventId": "1521298666",
+  "IdTeam": "43972",
+  "IdPlayer": "177662",
+  "IdPerson": "177662",
+  "Timestamp": "2026-06-20T04:29:17.394Z",
+  "MatchMinute": "63'",
+  "Period": 5,
+  "HomeGoals": 0,
+  "AwayGoals": 1,
+  "Type": 2,
+  "Qualifiers": [],
+  "TypeLocalized": [
+    {
+      "Locale": "en-GB",
+      "Description": "Yellow card"
+    }
+  ],
+  "HomePenaltyGoals": 0,
+  "AwayPenaltyGoals": 0,
+  "EventDescription": [
+    {
+      "Locale": "en-GB",
+      "Description": "Vincenzo MONTELLA (Türkiye) is booked by the referee."
+    }
+  ],
+  "_logged_at": "2026-06-20T04:29:31.633137+00:00"
+}
