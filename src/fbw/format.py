@@ -59,6 +59,7 @@ EVENT_MARKERS = {
     EventType.SAVE: "SAVE",
     EventType.INJURY: "INJURY",
     EventType.VAR: "** VAR",
+    EventType.DELAY: "DELAY",
     EventType.RESUME: "RESUME",
     EventType.COIN: "COIN",
     EventType.PAUSE: "PAUSE",
