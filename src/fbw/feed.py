@@ -365,8 +365,11 @@ class FeedEngine:
         except OSError:
             pass
 
+    # Pending corrections for emitted events
+    _pending_corrections: list[dict] = []
+
     def _apply_enrichment(self, eid: str, field: str, value):
-        """Apply enrichment to buffer or track for emitted events."""
+        """Apply enrichment to buffer or queue correction for emitted events."""
         if eid in self._buffer:
             # Still buffered — update raw and re-parse
             buf = self._buffer[eid]
@@ -374,9 +377,70 @@ class FeedEngine:
             buf.enrichments_applied.add(field)
             buf.event = parse_event(buf.raw, self.match)
         elif eid in self._emitted:
-            # Already pushed — track (correction could be emitted later)
+            # Already pushed — queue correction if not already shown
             if field not in self._emitted[eid]:
                 self._emitted[eid].add(field)
+                self._pending_corrections.append({
+                    "event_id": eid, "field": field, "value": value,
+                })
+
+    def collect_corrections(self) -> list[str]:
+        """Collect and format pending corrections for emitted events."""
+        if not self._pending_corrections:
+            return []
+
+        lines = []
+        # Group by event_id
+        by_event: dict[str, list[dict]] = {}
+        for c in self._pending_corrections:
+            eid = c["event_id"]
+            if eid not in by_event:
+                by_event[eid] = []
+            by_event[eid].append(c)
+        self._pending_corrections = []
+
+        for eid, corrections in by_event.items():
+            fields = [c["field"] for c in corrections]
+
+            # Re-parse the event with all enrichments applied
+            # to get the corrected version
+            if eid in self._enrichment_cache:
+                # Find the original raw from the events file
+                # For now, emit field-level corrections
+                for c in corrections:
+                    field = c["field"]
+                    value = c["value"]
+
+                    if field == "EventDescription":
+                        desc = value
+                        if isinstance(desc, list) and desc and isinstance(desc[0], dict):
+                            desc = desc[0].get("Description", "")
+                        if desc:
+                            lines.append(f"  >> CORRECTED: {desc}")
+
+                    elif field == "IdPlayer":
+                        player = self.match.player_by_id(str(value))
+                        if player:
+                            lines.append(f"  >> CORRECTED: player is {player.display_name}")
+
+                    elif field in ("PositionX", "PositionY",
+                                   "GoalGatePositionX", "GoalGatePositionY"):
+                        # Wait until we have both X and Y
+                        if ("PositionX" in [c2["field"] for c2 in corrections] and
+                                "PositionY" in [c2["field"] for c2 in corrections]):
+                            px = self._enrichment_cache.get(eid, {}).get("PositionX")
+                            py = self._enrichment_cache.get(eid, {}).get("PositionY")
+                            if px is not None and py is not None:
+                                from .model import ShotPosition
+                                sp = ShotPosition.from_raw(px, py)
+                                lines.append(
+                                    f"  >> ENRICHED: from {sp.distance_m:.0f}m, "
+                                    f"{sp.zone}, {sp.side} ({px:.0f},{py:.0f})"
+                                )
+                            # Don't emit individual X/Y separately
+                            break
+
+        return lines
 
     def collect_ready(self) -> list[str]:
         """Step 4+5: Collect ready events, group by minute, format."""
@@ -446,6 +510,9 @@ class FeedEngine:
         if enrichments_changed:
             self.read_new_enrichments()
 
+        # 3b: Collect corrections for already-emitted events
+        correction_lines = self.collect_corrections()
+
         # 4-5: Collect ready events
         event_lines = self.collect_ready()
 
@@ -454,6 +521,8 @@ class FeedEngine:
 
         # 7: Emit combined notification
         output = []
+        if correction_lines:
+            output.extend(correction_lines)
         if event_lines:
             output.extend(event_lines)
         if stats_block:
