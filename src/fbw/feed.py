@@ -130,6 +130,9 @@ class FeedEngine:
         self.events_pos = 0
         self.enrichments_pos = 0
 
+        # Enrichment cache: event_id → {field: value, ...}
+        self._enrichment_cache: dict[str, dict[str, any]] = {}
+
         # State tracking
         self._buffer: dict[str, BufferedEvent] = {}
         self._emitted: dict[str, set[str]] = {}
@@ -138,12 +141,49 @@ class FeedEngine:
         self._last_minute: float = -1.0
         self._last_stats_minute: float = 0.0
 
+    # --- Enrichment cache ---
+
+    def load_enrichment_cache(self):
+        """Load all available enrichments into cache. Called at startup
+        and refreshed when the enrichments file changes."""
+        self._enrichment_cache.clear()
+        if not self.enrichments_path.exists():
+            return
+        with open(self.enrichments_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                    eid = e.get("event_id", "")
+                    field = e.get("field", "")
+                    if eid and field:
+                        if eid not in self._enrichment_cache:
+                            self._enrichment_cache[eid] = {}
+                        self._enrichment_cache[eid][field] = e.get("new")
+                except json.JSONDecodeError:
+                    pass
+            self.enrichments_pos = f.tell()
+
+    def enrich_raw(self, event_id: str, raw: dict) -> dict:
+        """Apply any available enrichments to a raw event dict.
+        Called before parsing — works for both catchup and live."""
+        if event_id in self._enrichment_cache:
+            for field, value in self._enrichment_cache[event_id].items():
+                raw[field] = value
+        return raw
+
     # --- Catchup (no delay, immediate) ---
 
     def catchup(self):
-        """Read and emit all existing events. No delay, no buffering."""
+        """Read and emit all existing events. No delay, no buffering.
+        Enrichments are applied before parsing for complete data."""
         if not self.events_path.exists():
             return
+
+        # Load enrichment cache FIRST so catchup events get enriched
+        self.load_enrichment_cache()
 
         raw_events = []
         with open(self.events_path) as f:
@@ -161,15 +201,12 @@ class FeedEngine:
                     pass
             self.events_pos = f.tell()
 
-        # Skip enrichments to end
-        if self.enrichments_path.exists():
-            with open(self.enrichments_path) as f:
-                f.read()
-                self.enrichments_pos = f.tell()
-
-        # Parse, dedup, process
+        # Parse, dedup, process — with enrichments applied
         events = []
         for raw in raw_events:
+            eid = raw.get("EventId", "")
+            if eid:
+                raw = self.enrich_raw(eid, raw)
             ev = parse_event(raw, self.match)
             dk = ev.dedup_key
             if dk in self._seen_dedup_keys:
@@ -261,7 +298,7 @@ class FeedEngine:
             pass
 
     def read_new_enrichments(self):
-        """Step 2: Read new enrichment lines."""
+        """Step 2: Read new enrichment lines, update cache and buffer."""
         if not self.enrichments_path.exists():
             return
         try:
@@ -273,30 +310,39 @@ class FeedEngine:
                         continue
                     try:
                         enrichment = json.loads(line)
-                        self._apply_enrichment(enrichment)
+                        eid = enrichment.get("event_id", "")
+                        field = enrichment.get("field", "")
+                        new_val = enrichment.get("new")
+
+                        if not eid or not field:
+                            continue
+
+                        # Update cache (available for future re-parses)
+                        if eid not in self._enrichment_cache:
+                            self._enrichment_cache[eid] = {}
+                        self._enrichment_cache[eid][field] = new_val
+
+                        # Apply to buffer or note for emitted events
+                        self._apply_enrichment(eid, field, new_val)
+
                     except json.JSONDecodeError:
                         pass
                 self.enrichments_pos = f.tell()
         except OSError:
             pass
 
-    def _apply_enrichment(self, enrichment: dict):
-        """Step 3: Apply enrichment to buffer or queue correction."""
-        eid = enrichment.get("event_id", "")
-        field_name = enrichment.get("field", "")
-        if not eid or not field_name:
-            return
-
+    def _apply_enrichment(self, eid: str, field: str, value):
+        """Apply enrichment to buffer or track for emitted events."""
         if eid in self._buffer:
-            # Still buffered — update in place
+            # Still buffered — update raw and re-parse
             buf = self._buffer[eid]
-            buf.raw[field_name] = enrichment.get("new")
-            buf.enrichments_applied.add(field_name)
+            buf.raw[field] = value
+            buf.enrichments_applied.add(field)
             buf.event = parse_event(buf.raw, self.match)
         elif eid in self._emitted:
-            # Already pushed — queue correction if not already shown
-            if field_name not in self._emitted[eid]:
-                self._emitted[eid].add(field_name)
+            # Already pushed — track (correction could be emitted later)
+            if field not in self._emitted[eid]:
+                self._emitted[eid].add(field)
 
     def collect_ready(self) -> list[str]:
         """Step 4+5: Collect ready events, group by minute, format."""
@@ -307,10 +353,13 @@ class FeedEngine:
         if not ready_ids:
             return []
 
-        # Collect and remove from buffer
+        # Collect, apply final enrichments, remove from buffer
         ready = []
         for eid in ready_ids:
             buf = self._buffer.pop(eid)
+            # Final enrichment check before emit
+            buf.raw = self.enrich_raw(eid, buf.raw)
+            buf.event = parse_event(buf.raw, self.match)
             formatted = format_event(buf.event, self.match)
             if buf.event.is_late:
                 formatted = f"!! {formatted.lstrip()}"
