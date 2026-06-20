@@ -12,10 +12,12 @@ football-wire uses open data from the following sources:
 ## The Fjelstul World Cup Database
 - **Repository:** https://github.com/jfjelstul/worldcup
 - **Author:** Joshua C. Fjelstul, Ph.D.
-- **License:** CC0 1.0 Universal (Public Domain)
+- **Copyright:** © 2023 Joshua C. Fjelstul, Ph.D.
+- **License:** CC-BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/legalcode)
 - **Data:** Historical World Cup data 1930-2022 — matches, goals, bookings,
   substitutions, squads, group standings, stadiums, tournaments
-- **Featured by:** BBC, Sky Sports, Washington Post, FiveThirtyEight, and others
+- **Note:** Not bundled in this repository. Download separately from the source.
+  ShareAlike license requires derivative works to carry CC-BY-SA 4.0.
 
 ## Wikimedia Commons
 - **Source:** https://commons.wikimedia.org
