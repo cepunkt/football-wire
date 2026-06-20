@@ -62,6 +62,7 @@ EVENT_MARKERS = {
     EventType.DELAY: "DELAY",
     EventType.RESUME: "RESUME",
     EventType.COIN: "COIN",
+    EventType.COIN_SIDE: "COIN",
     EventType.PAUSE: "PAUSE",
 }
 

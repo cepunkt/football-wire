@@ -70,6 +70,7 @@ class EventType(IntEnum):
     DELAY = 77
     RESUME = 78
     COIN = 79
+    COIN_SIDE = 80
     PAUSE = 83
 
     @property
@@ -84,8 +85,8 @@ class EventType(IntEnum):
     def is_structural(self) -> bool:
         """Events about match flow, not play."""
         return self in (EventType.PERIOD_START, EventType.PERIOD_END,
-                        EventType.RESUME, EventType.COIN, EventType.PAUSE,
-                        EventType.DELAY)
+                        EventType.RESUME, EventType.COIN, EventType.COIN_SIDE,
+                        EventType.PAUSE, EventType.DELAY)
 
 
 # --- Minute ---
