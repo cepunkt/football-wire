@@ -171,8 +171,12 @@ class EventFileHandler(FileSystemEventHandler):
                 return
             self._seen_dedup_keys.add(dk)
 
-            # Late arrival detection
-            if ev.minute.value >= 0 and ev.minute.value < self._last_minute:
+            # Period boundaries reset late-arrival tracking
+            if ev.event_type in (EventType.PERIOD_START,):
+                self._last_minute = ev.minute.value
+
+            # Late arrival detection (within a period only)
+            elif ev.minute.value >= 0 and ev.minute.value < self._last_minute:
                 ev.is_late = True
 
             # Apply to match state
