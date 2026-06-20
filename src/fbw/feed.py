@@ -2,23 +2,25 @@
 """
 LM feed client for football-wire.
 
-Event-driven match monitor optimised for LLM consumption via stdout.
-Each stdout line becomes a Monitor notification. Designed for Claude
-Code's Monitor tool but works with any system that watches stdout.
+Cycle-based match monitor optimised for LLM consumption via stdout.
+Runs a fixed-interval cycle (default 10s) that collects events,
+applies enrichments, and emits grouped notifications.
 
 Usage:
     python -m fbw.feed                     # auto-detect live match
     python -m fbw.feed <match_id>          # watch specific match
-    python -m fbw.feed --delay 60 <id>     # delay for enrichment + TV sync
+    python -m fbw.feed --delay 30 <id>     # enrichment + TV sync delay
+    python -m fbw.feed --cycle 10 <id>     # cycle interval seconds
     python -m fbw.feed --snapshot          # current state, exit
 
-Enrichment flow:
-    Event arrives → buffer (delay seconds)
-    Enrichment arrives during delay → update buffered event silently
-    Delay expires → emit enriched event
-    Enrichment arrives after emit → push correction immediately
-
-The delay serves dual purpose: TV sync AND enrichment window.
+Cycle flow (every N seconds):
+    1. Read new events (if flagged by watchdog)
+    2. Read new enrichments (if flagged)
+    3. Apply enrichments to buffered events
+    4. Collect events past their delay
+    5. Group by minute
+    6. Check stats interval (ESPN if enabled, else computed)
+    7. Emit one combined notification
 """
 
 import argparse
@@ -34,42 +36,71 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
 from .config import init_config, get_config
-from .process import process_match, read_raw_json, parse_event, get_localized
+from .process import process_match, read_raw_json, parse_event
 from .format import (
     format_preamble, format_match_header, format_event,
-    format_stats, format_score_line, load_team_profile,
+    format_stats, load_team_profile,
 )
-from .model import Match, Event, EventType, Minute, Trust
+from .model import Match, Event, EventType, MatchStats, Trust
 
 # Force unbuffered output
 print = partial(print, flush=True)
 
 
-# --- Buffered event tracking ---
+# --- Buffered event ---
 
 @dataclass
 class BufferedEvent:
-    """An event waiting to be emitted, trackable for enrichment."""
+    """An event waiting to be emitted."""
     event: Event
     raw: dict
     buffered_at: float
-    emit_after: float          # time.time() when eligible for push
+    emit_after: float
     minute_value: float
-    enrichments_applied: set = field(default_factory=set)  # field names updated
-    emitted: bool = False
+    enrichments_applied: set = field(default_factory=set)
 
 
-# --- Live state reader ---
+# --- File change watcher (flag-only, no processing) ---
+
+class FileChangeFlag(FileSystemEventHandler):
+    """Watchdog handler that just sets flags. Processing happens in the cycle."""
+
+    def __init__(self, events_name: str, enrichments_name: str):
+        super().__init__()
+        self.events_name = events_name
+        self.enrichments_name = enrichments_name
+        self.events_changed = False
+        self.enrichments_changed = False
+        self._lock = threading.Lock()
+
+    def on_modified(self, event):
+        if not isinstance(event, FileModifiedEvent):
+            return
+        name = Path(event.src_path).name
+        with self._lock:
+            if name == self.events_name:
+                self.events_changed = True
+            elif name == self.enrichments_name:
+                self.enrichments_changed = True
+
+    def consume_flags(self) -> tuple[bool, bool]:
+        """Read and reset flags. Called from the cycle."""
+        with self._lock:
+            ev, en = self.events_changed, self.enrichments_changed
+            self.events_changed = False
+            self.enrichments_changed = False
+        return ev, en
+
+
+# --- Live state ---
 
 def read_live(config) -> dict:
-    """Read live.json tracking state."""
     path = config.paths.raw_api_dir / "live.json"
     data = read_raw_json(path)
     return data or {"matches": {}}
 
 
 def find_live_match(config) -> str | None:
-    """Find a currently live match."""
     live = read_live(config)
     for mid, info in live.get("matches", {}).items():
         if info.get("status") == 3:
@@ -80,41 +111,40 @@ def find_live_match(config) -> str | None:
     return None
 
 
-# --- Event file watcher ---
+# --- Feed engine ---
 
-class EventFileHandler(FileSystemEventHandler):
-    """Watches events JSONL and enrichments JSONL, manages buffered emission."""
+class FeedEngine:
+    """Cycle-based feed engine. One cycle = one notification max."""
 
     def __init__(self, events_path: Path, enrichments_path: Path,
-                 match: Match, delay: int = 0, stats_interval: int = 15):
-        super().__init__()
+                 match: Match, delay: int = 0, cycle_interval: int = 10,
+                 stats_interval: int = 15):
         self.events_path = events_path
         self.enrichments_path = enrichments_path
         self.match = match
         self.delay = delay
+        self.cycle_interval = cycle_interval
         self.stats_interval = stats_interval
 
         # File positions
-        self.events_position = 0
-        self.enrichments_position = 0
+        self.events_pos = 0
+        self.enrichments_pos = 0
 
-        # Event tracking
-        self._buffer: dict[str, BufferedEvent] = {}   # event_id → buffered (not yet pushed)
-        self._emitted: dict[str, set[str]] = {}       # event_id → set of fields already shown
+        # State tracking
+        self._buffer: dict[str, BufferedEvent] = {}
+        self._emitted: dict[str, set[str]] = {}
         self._seen_event_ids: set[str] = set()
         self._seen_dedup_keys: set[str] = set()
-
-        # Timing
         self._last_minute: float = -1.0
         self._last_stats_minute: float = 0.0
-        self._lock = threading.Lock()
 
-    # --- Catchup ---
+    # --- Catchup (no delay, immediate) ---
 
     def catchup(self):
-        """Read all existing events, sorted by minute. No delay on catchup."""
+        """Read and emit all existing events. No delay, no buffering."""
         if not self.events_path.exists():
             return
+
         raw_events = []
         with open(self.events_path) as f:
             for line in f:
@@ -129,19 +159,18 @@ class EventFileHandler(FileSystemEventHandler):
                     raw_events.append(raw)
                 except json.JSONDecodeError:
                     pass
-            self.events_position = f.tell()
+            self.events_pos = f.tell()
 
-        # Also catchup enrichments position (skip existing, we'll use timeline)
+        # Skip enrichments to end
         if self.enrichments_path.exists():
             with open(self.enrichments_path) as f:
-                f.read()  # skip to end
-                self.enrichments_position = f.tell()
+                f.read()
+                self.enrichments_pos = f.tell()
 
-        # Parse and process through model
+        # Parse, dedup, process
         events = []
         for raw in raw_events:
             ev = parse_event(raw, self.match)
-
             dk = ev.dedup_key
             if dk in self._seen_dedup_keys:
                 continue
@@ -151,268 +180,219 @@ class EventFileHandler(FileSystemEventHandler):
                 self.match.apply_sub(ev.on_player_id, ev.off_player_id)
             if self.match.stats:
                 self.match.stats.update(ev)
-
             events.append(ev)
 
-        # Sort by minute
         events.sort(key=lambda e: (e.minute.value, e.logged_at))
 
         for ev in events:
             if ev.minute.value >= 0:
                 self._last_minute = max(self._last_minute, ev.minute.value)
             print(format_event(ev, self.match))
-            # Mark as emitted for enrichment tracking
             if ev.event_id:
                 self._emitted[ev.event_id] = set()
 
         if events and self._last_minute > 0:
             self._last_stats_minute = self._last_minute
 
-    # --- Watchdog callbacks ---
+    # --- Cycle steps ---
 
-    def on_modified(self, event):
-        if not isinstance(event, FileModifiedEvent):
+    def read_new_events(self):
+        """Step 1: Read new event lines from JSONL."""
+        if not self.events_path.exists():
             return
-        src = Path(event.src_path).name
-        if src == self.events_path.name:
-            self._read_new_events()
-        elif src == self.enrichments_path.name:
-            self._read_new_enrichments()
-
-    # --- Event processing ---
-
-    def _read_new_events(self):
         try:
             with open(self.events_path) as f:
-                f.seek(self.events_position)
+                f.seek(self.events_pos)
                 for line in f:
-                    self._process_event_line(line)
-                self.events_position = f.tell()
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw = json.loads(line)
+                        eid = raw.get("EventId", "")
+                        if eid and eid in self._seen_event_ids:
+                            continue
+                        if eid:
+                            self._seen_event_ids.add(eid)
+
+                        ev = parse_event(raw, self.match)
+                        dk = ev.dedup_key
+                        if dk in self._seen_dedup_keys:
+                            continue
+                        self._seen_dedup_keys.add(dk)
+
+                        # Period boundary resets
+                        if ev.event_type == EventType.PERIOD_START:
+                            self._last_minute = ev.minute.value
+                        elif ev.minute.value >= 0 and ev.minute.value < self._last_minute:
+                            ev.is_late = True
+
+                        # Apply to match state
+                        if ev.event_type == EventType.SUB:
+                            self.match.apply_sub(ev.on_player_id, ev.off_player_id)
+                        if self.match.stats:
+                            self.match.stats.update(ev)
+
+                        # Buffer or mark for immediate emit
+                        if self.delay > 0 and eid:
+                            now = time.time()
+                            self._buffer[eid] = BufferedEvent(
+                                event=ev, raw=raw,
+                                buffered_at=now,
+                                emit_after=now + self.delay,
+                                minute_value=ev.minute.value,
+                            )
+                        else:
+                            if ev.minute.value >= 0:
+                                self._last_minute = max(self._last_minute, ev.minute.value)
+                            # Buffer with 0 delay — emits on next cycle
+                            if eid:
+                                self._buffer[eid] = BufferedEvent(
+                                    event=ev, raw=raw,
+                                    buffered_at=time.time(),
+                                    emit_after=0,
+                                    minute_value=ev.minute.value,
+                                )
+
+                    except json.JSONDecodeError:
+                        pass
+                self.events_pos = f.tell()
         except OSError:
             pass
 
-    def _process_event_line(self, line: str):
-        line = line.strip()
-        if not line:
-            return
-        try:
-            raw = json.loads(line)
-
-            # EventId dedup
-            eid = raw.get("EventId", "")
-            if eid:
-                if eid in self._seen_event_ids:
-                    return
-                self._seen_event_ids.add(eid)
-
-            # Parse through model
-            ev = parse_event(raw, self.match)
-
-            # Content dedup
-            dk = ev.dedup_key
-            if dk in self._seen_dedup_keys:
-                return
-            self._seen_dedup_keys.add(dk)
-
-            # Period boundaries reset late-arrival tracking
-            if ev.event_type in (EventType.PERIOD_START,):
-                self._last_minute = ev.minute.value
-            elif ev.minute.value >= 0 and ev.minute.value < self._last_minute:
-                ev.is_late = True
-
-            # Apply to match state
-            if ev.event_type == EventType.SUB:
-                self.match.apply_sub(ev.on_player_id, ev.off_player_id)
-            if self.match.stats:
-                self.match.stats.update(ev)
-
-            if self.delay > 0 and eid:
-                # Buffer for enrichment window
-                now = time.time()
-                with self._lock:
-                    self._buffer[eid] = BufferedEvent(
-                        event=ev,
-                        raw=raw,
-                        buffered_at=now,
-                        emit_after=now + self.delay,
-                        minute_value=ev.minute.value,
-                    )
-            else:
-                # No delay — emit immediately
-                if ev.minute.value >= 0:
-                    self._last_minute = max(self._last_minute, ev.minute.value)
-                print(format_event(ev, self.match))
-                if eid:
-                    self._emitted[eid] = set()
-
-        except json.JSONDecodeError:
-            pass
-
-    # --- Enrichment processing ---
-
-    def _read_new_enrichments(self):
+    def read_new_enrichments(self):
+        """Step 2: Read new enrichment lines."""
         if not self.enrichments_path.exists():
             return
         try:
             with open(self.enrichments_path) as f:
-                f.seek(self.enrichments_position)
+                f.seek(self.enrichments_pos)
                 for line in f:
-                    self._process_enrichment_line(line)
-                self.enrichments_position = f.tell()
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        enrichment = json.loads(line)
+                        self._apply_enrichment(enrichment)
+                    except json.JSONDecodeError:
+                        pass
+                self.enrichments_pos = f.tell()
         except OSError:
             pass
 
-    def _process_enrichment_line(self, line: str):
-        line = line.strip()
-        if not line:
-            return
-        try:
-            enrichment = json.loads(line)
-            eid = enrichment.get("event_id", "")
-            field_name = enrichment.get("field", "")
-            if not eid or not field_name:
-                return
-
-            with self._lock:
-                if eid in self._buffer:
-                    # Event still buffered — update in place, no correction needed
-                    buf = self._buffer[eid]
-                    # Update the raw dict with new value
-                    buf.raw[field_name] = enrichment.get("new")
-                    buf.enrichments_applied.add(field_name)
-                    # Re-parse the event from updated raw
-                    buf.event = parse_event(buf.raw, self.match)
-
-                elif eid in self._emitted:
-                    # Event already pushed — emit correction if field not already shown
-                    if field_name not in self._emitted[eid]:
-                        self._emitted[eid].add(field_name)
-                        self._emit_correction(enrichment)
-                # else: unknown event, ignore
-
-        except json.JSONDecodeError:
-            pass
-
-    def _emit_correction(self, enrichment: dict):
-        """Emit a correction line for an already-pushed event."""
+    def _apply_enrichment(self, enrichment: dict):
+        """Step 3: Apply enrichment to buffer or queue correction."""
         eid = enrichment.get("event_id", "")
         field_name = enrichment.get("field", "")
-        minute = enrichment.get("minute", "")
-        new_val = enrichment.get("new")
+        if not eid or not field_name:
+            return
 
-        # For shot coordinates arriving late, re-format the full event
-        # from the timeline snapshot if available
-        if field_name.startswith("Position") or field_name.startswith("GoalGate"):
-            # Accumulate position enrichments — only emit when we have
-            # enough for a meaningful update (at least X and Y)
-            if eid not in self._emitted:
-                return
-            applied = self._emitted[eid]
-            applied.add(field_name)
+        if eid in self._buffer:
+            # Still buffered — update in place
+            buf = self._buffer[eid]
+            buf.raw[field_name] = enrichment.get("new")
+            buf.enrichments_applied.add(field_name)
+            buf.event = parse_event(buf.raw, self.match)
+        elif eid in self._emitted:
+            # Already pushed — queue correction if not already shown
+            if field_name not in self._emitted[eid]:
+                self._emitted[eid].add(field_name)
 
-            # Wait until we have at least PositionX + PositionY
-            if "PositionX" in applied and "PositionY" in applied:
-                # Re-read this event from the timeline snapshot
-                from .model import ShotPosition
-                # Build a minimal description from what we know
-                print(f"  >> ENRICHED {minute}: shot coordinates now available")
-
-        elif field_name == "EventDescription":
-            old_desc = ""
-            new_desc = ""
-            old_raw = enrichment.get("old")
-            new_raw = enrichment.get("new")
-            if isinstance(old_raw, list) and old_raw and isinstance(old_raw[0], dict):
-                old_desc = old_raw[0].get("Description", "")
-            if isinstance(new_raw, list) and new_raw and isinstance(new_raw[0], dict):
-                new_desc = new_raw[0].get("Description", "")
-            if new_desc and new_desc != old_desc:
-                print(f"  >> ENRICHED {minute}: {new_desc}")
-
-        elif field_name == "IdPlayer":
-            new_pid = str(new_val or "")
-            player = self.match.player_by_id(new_pid)
-            if player:
-                print(f"  >> ENRICHED {minute}: player identified as {player.display_name}")
-
-    # --- Flush ---
-
-    def flush_ready(self):
-        """Emit buffered events past their delay, with enrichments applied."""
-        if not self._buffer:
-            return 0
+    def collect_ready(self) -> list[str]:
+        """Step 4+5: Collect ready events, group by minute, format."""
         now = time.time()
-        with self._lock:
-            ready_ids = [eid for eid, buf in self._buffer.items()
-                         if now >= buf.emit_after]
+        ready_ids = [eid for eid, buf in self._buffer.items()
+                     if now >= buf.emit_after]
 
         if not ready_ids:
-            return 0
+            return []
 
-        # Collect and sort by minute
+        # Collect and remove from buffer
         ready = []
-        with self._lock:
-            for eid in ready_ids:
-                buf = self._buffer.pop(eid)
-                # Re-format the event (may have been enriched in buffer)
-                formatted = format_event(buf.event, self.match)
-                if buf.event.is_late:
-                    formatted = f"!! {formatted.lstrip()}"
-                ready.append((formatted, buf.minute_value, eid, buf.enrichments_applied))
+        for eid in ready_ids:
+            buf = self._buffer.pop(eid)
+            formatted = format_event(buf.event, self.match)
+            if buf.event.is_late:
+                formatted = f"!! {formatted.lstrip()}"
+            ready.append((formatted, buf.minute_value, eid, buf.enrichments_applied))
 
+        # Sort by minute
         ready.sort(key=lambda x: x[1])
-        for formatted, mv, eid, applied_fields in ready:
+
+        lines = []
+        for formatted, mv, eid, applied in ready:
             if mv >= 0:
                 self._last_minute = max(self._last_minute, mv)
-            print(formatted)
-            # Move to emitted, carrying over which enrichments were already applied
-            self._emitted[eid] = applied_fields
+            lines.append(formatted)
+            self._emitted[eid] = applied
 
-        return len(ready)
+        return lines
+
+    def check_stats(self) -> str | None:
+        """Step 6: Check if stats block is due."""
+        if self.stats_interval <= 0 or not self.match.stats:
+            return None
+
+        current = self._last_minute
+        if current <= 0 or current - self._last_stats_minute < self.stats_interval:
+            return None
+
+        minute_str = f"{int(current)}'"
+
+        # Try ESPN first
+        config = get_config()
+        if config.sources.espn:
+            try:
+                from .espn import get_latest_stats, format_espn_stats
+                espn_row = get_latest_stats(self.match.match_id, config)
+                if espn_row:
+                    self._last_stats_minute = current
+                    return format_espn_stats(espn_row, minute_str)
+            except Exception:
+                pass
+
+        # Fallback: computed
+        self._last_stats_minute = current
+        return format_stats(self.match.stats, minute_str)
+
+    def run_cycle(self, events_changed: bool, enrichments_changed: bool) -> None:
+        """Run one complete cycle. Emit at most one notification."""
+        # 1-2: Read new data if flagged
+        if events_changed:
+            self.read_new_events()
+        if enrichments_changed:
+            self.read_new_enrichments()
+
+        # 4-5: Collect ready events
+        event_lines = self.collect_ready()
+
+        # 6: Check stats
+        stats_block = self.check_stats()
+
+        # 7: Emit combined notification
+        output = []
+        if event_lines:
+            output.extend(event_lines)
+        if stats_block:
+            output.append(stats_block)
+
+        if output:
+            print("\n".join(output))
 
     def flush_all(self):
-        """Emit all buffered events sorted by minute."""
-        with self._lock:
-            items = []
-            for eid, buf in self._buffer.items():
-                formatted = format_event(buf.event, self.match)
-                if buf.event.is_late:
-                    formatted = f"!! {formatted.lstrip()}"
-                items.append((formatted, buf.minute_value, eid, buf.enrichments_applied))
-            self._buffer.clear()
+        """Emit everything remaining in the buffer."""
+        items = []
+        for eid, buf in self._buffer.items():
+            formatted = format_event(buf.event, self.match)
+            if buf.event.is_late:
+                formatted = f"!! {formatted.lstrip()}"
+            items.append((formatted, buf.minute_value, eid))
+        self._buffer.clear()
 
         items.sort(key=lambda x: x[1])
-        for formatted, mv, eid, applied_fields in items:
-            print(formatted)
-            self._emitted[eid] = applied_fields
-
-    # --- Stats ---
-
-    def check_stats_interval(self):
-        if self.stats_interval <= 0 or not self.match.stats:
-            return
-        current = self._last_minute
-        if current > 0 and current - self._last_stats_minute >= self.stats_interval:
-            minute_str = f"{int(current)}'"
-
-            # Try ESPN stats first (opt-in, more accurate)
-            config = get_config()
-            if config.sources.espn:
-                try:
-                    from .espn import get_latest_stats, format_espn_stats
-                    espn_row = get_latest_stats(
-                        self.match.match_id, config
-                    )
-                    if espn_row:
-                        print(format_espn_stats(espn_row, minute_str))
-                        self._last_stats_minute = current
-                        return
-                except Exception:
-                    pass
-
-            # Fallback: our computed stats
-            print(format_stats(self.match.stats, minute_str))
-            self._last_stats_minute = current
+        if items:
+            lines = [fmt for fmt, _, _ in items]
+            print("\n".join(lines))
 
 
 # --- Commands ---
@@ -441,13 +421,13 @@ def cmd_snapshot(config, match_id: str | None = None):
               f"{info.get('away', '?')} (#{mid})")
 
 
-def cmd_watch(config, match_id: str, delay: int = 0):
-    """Watch a match — catchup then live events with enrichment support."""
+def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
+    """Watch a match with cycle-based emission."""
     raw_match_path = config.paths.raw_matches_dir / f"{match_id}.json"
     raw_events_path = config.paths.raw_events_dir / f"{match_id}.jsonl"
     raw_enrichments_path = config.paths.raw_enrichments_dir / f"{match_id}.jsonl"
 
-    # Build match model from raw data
+    # Build match model
     result = process_match(raw_match_path, raw_events_path)
     if result is None:
         from .process import parse_match, read_raw_json as read_raw
@@ -465,72 +445,72 @@ def cmd_watch(config, match_id: str, delay: int = 0):
             match.on_pitch.add(p.id)
         for p in match.away.starters:
             match.on_pitch.add(p.id)
-        from .model import MatchStats
         match.stats = MatchStats(match.home.abbreviation, match.away.abbreviation)
 
-    # Print preamble
+    # Preamble + header
     if config.display.preamble:
         print(format_preamble())
-
-    # Print match header
     print(format_match_header(match))
-
-    # Print team profiles
     for team in [match.home, match.away]:
         profile = load_team_profile(team.abbreviation)
         if profile:
             print()
             print(profile)
 
-    # Wait for events file
+    # Wait for events
     if not raw_events_path.exists():
         print(f"Waiting for events on #{match_id}...")
         while not raw_events_path.exists():
             time.sleep(2)
 
-    # Set up handler watching both events and enrichments
-    handler = EventFileHandler(
+    # Engine
+    engine = FeedEngine(
         raw_events_path, raw_enrichments_path, match,
-        delay=delay,
+        delay=delay, cycle_interval=cycle_interval,
         stats_interval=config.display.stats_interval,
     )
 
-    # Catchup existing events
-    handler.catchup()
+    # Catchup
+    engine.catchup()
     print("-- live --")
 
-    # Watch for changes in both events and enrichments directories
+    # Watchdog (flag-only)
+    watcher = FileChangeFlag(
+        raw_events_path.name,
+        raw_enrichments_path.name,
+    )
     observer = Observer()
-    observer.schedule(handler, str(config.paths.raw_events_dir), recursive=False)
-    observer.schedule(handler, str(config.paths.raw_enrichments_dir), recursive=False)
+    observer.schedule(watcher, str(config.paths.raw_events_dir), recursive=False)
+    observer.schedule(watcher, str(config.paths.raw_enrichments_dir), recursive=False)
     observer.start()
 
     try:
         while True:
-            if delay > 0:
-                handler.flush_ready()
+            time.sleep(cycle_interval)
 
-            handler.check_stats_interval()
+            # Consume flags
+            ev_changed, en_changed = watcher.consume_flags()
+
+            # Run cycle
+            engine.run_cycle(ev_changed, en_changed)
 
             # Check for full time
             live = read_live(config)
             info = live.get("matches", {}).get(match_id)
             if info and info.get("status") == 0:
                 time.sleep(2)
-                handler._read_new_events()
-                handler._read_new_enrichments()
-                handler.flush_all()
+                engine.read_new_events()
+                engine.read_new_enrichments()
+                engine.flush_all()
                 print(f"FULL TIME: {info.get('home', '?')} "
                       f"{info.get('home_score', '?')}-{info.get('away_score', '?')} "
                       f"{info.get('away', '?')} (#{match_id})")
                 break
 
-            time.sleep(1)
-
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
-        handler.flush_all()
+        engine.flush_all()
         observer.stop()
         observer.join(timeout=3)
 
@@ -541,7 +521,8 @@ def main():
     parser = argparse.ArgumentParser(description="football-wire LM feed")
     parser.add_argument("match_id", nargs="?", help="Match ID to watch")
     parser.add_argument("--config", help="Path to config file")
-    parser.add_argument("--delay", type=int, help="Delay in seconds (enrichment + TV sync)")
+    parser.add_argument("--delay", type=int, help="Delay seconds (enrichment + TV sync)")
+    parser.add_argument("--cycle", type=int, help="Cycle interval seconds (default 10)")
     parser.add_argument("--snapshot", action="store_true", help="One-shot status")
 
     args = parser.parse_args()
@@ -552,6 +533,7 @@ def main():
         return
 
     delay = args.delay if args.delay is not None else config.display.delay
+    cycle = args.cycle if args.cycle is not None else 10
 
     match_id = args.match_id
     if not match_id:
@@ -561,7 +543,7 @@ def main():
             sys.exit(1)
         print(f"Auto-detected: #{match_id}")
 
-    cmd_watch(config, match_id, delay=delay)
+    cmd_watch(config, match_id, delay=delay, cycle_interval=cycle)
 
 
 if __name__ == "__main__":
