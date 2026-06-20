@@ -258,6 +258,98 @@ def format_score_line(match: Match) -> str:
 TEAMS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "static" / "teams"
 
 
+def format_match_summary(match: Match, events: list[Event]) -> str:
+    """Deterministic match summary from processed data.
+
+    Shows: score, key events (goals, cards, subs), then stat totals.
+    No LLM needed — pure counting and filtering.
+    """
+    lines = []
+
+    # Header
+    h = match.home
+    a = match.away
+    lines.append(f"{h.name} {match.home_score}-{match.away_score} {a.name}")
+    lines.append(f"  {match.stadium}, {match.city}")
+    if match.attendance:
+        lines.append(f"  Attendance: {match.attendance:,}")
+    if match.referee:
+        lines.append(f"  Referee: {match.referee} ({match.referee_country})")
+    lines.append("")
+
+    # Goals
+    goals = [e for e in events if e.event_type.is_goal]
+    if goals:
+        lines.append("Goals:")
+        for ev in goals:
+            player = match.player_by_id(ev.player_id)
+            name = player.display_name if player else ev.description
+            shot_info = ""
+            if ev.shot_position:
+                shot_info = f" ({ev.shot_position.distance_m:.0f}m, {ev.shot_position.zone})"
+            lines.append(f"  {ev.minute}  {ev.team_abbr}  {name}{shot_info}")
+        lines.append("")
+
+    # Cards
+    cards = [e for e in events if e.event_type.is_card]
+    if cards:
+        lines.append("Cards:")
+        for ev in cards:
+            player = match.player_by_id(ev.player_id)
+            name = player.display_name if player else ev.description
+            card_type = "Y" if ev.event_type == EventType.YELLOW else "R"
+            lines.append(f"  {ev.minute}  {card_type}  {ev.team_abbr}  {name}")
+        lines.append("")
+
+    # Substitutions
+    subs = [e for e in events if e.event_type == EventType.SUB]
+    if subs:
+        lines.append("Substitutions:")
+        for ev in subs:
+            on_p = match.player_by_id(ev.on_player_id)
+            off_p = match.player_by_id(ev.off_player_id)
+            on_name = on_p.display_name if on_p else "?"
+            off_name = off_p.display_name if off_p else "?"
+            lines.append(f"  {ev.minute}  {ev.team_abbr}  ON: {on_name}, OFF: {off_name}")
+        lines.append("")
+
+    # Stat summary
+    if match.stats:
+        lines.append(f"{'':>14s}  {h.abbreviation:>5s}  {a.abbreviation:>5s}")
+
+        # Compute extra stats not in MatchStats
+        shots_on = {h.abbreviation: 0, a.abbreviation: 0}
+        shots_off = {h.abbreviation: 0, a.abbreviation: 0}
+        for ev in events:
+            if ev.event_type == EventType.SHOT and ev.team_abbr in shots_on:
+                if ev.shot_position and ev.goal_placement:
+                    shots_on[ev.team_abbr] += 1
+                elif ev.shot_position:
+                    shots_off[ev.team_abbr] += 1
+
+        for label, key in [
+            ("Shots", "shots"),
+            ("Goals", "goals"),
+            ("Fouls", "fouls"),
+            ("Offsides", "offsides"),
+            ("Corners", "corners"),
+            ("Yellows", "yellows"),
+            ("Reds", "reds"),
+            ("Saves", "saves"),
+        ]:
+            hv = match.stats.counters.get(h.abbreviation, {}).get(key, 0)
+            av = match.stats.counters.get(a.abbreviation, {}).get(key, 0)
+            if hv or av:
+                lines.append(f"{label:>14s}  {hv:>5d}  {av:>5d}")
+
+        # Shots breakdown
+        if any(shots_on.values()) or any(shots_off.values()):
+            lines.append(f"{'On target':>14s}  {shots_on[h.abbreviation]:>5d}  {shots_on[a.abbreviation]:>5d}")
+            lines.append(f"{'Off target':>14s}  {shots_off[h.abbreviation]:>5d}  {shots_off[a.abbreviation]:>5d}")
+
+    return "\n".join(lines)
+
+
 def load_team_profile(abbreviation: str, teams_dir: Path | None = None) -> str:
     """Load team profile markdown if available."""
     d = teams_dir or TEAMS_DIR

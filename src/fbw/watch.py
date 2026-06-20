@@ -24,7 +24,7 @@ from pathlib import Path
 
 from .config import init_config, get_config
 from .process import read_raw_json, read_raw_events, process_match
-from .format import format_match_header, format_event, format_stats, format_score_line
+from .format import format_match_header, format_event, format_stats, format_score_line, format_match_summary
 from .model import EventType
 
 
@@ -128,21 +128,8 @@ def cmd_match(config, match_id: str):
         return
 
     match, events = result
-
     print()
-    print(format_match_header(match))
-    print("=" * 60)
-
-    # Key events only
-    for ev in events:
-        if ev.event_type in (EventType.GOAL, EventType.PENALTY_GOAL,
-                              EventType.RED, EventType.SECOND_YELLOW_RED,
-                              EventType.SUB, EventType.VAR):
-            print(format_event(ev, match))
-
-    print("=" * 60)
-    if match.stats:
-        print(format_stats(match.stats, "FT"))
+    print(format_match_summary(match, events))
 
 
 def cmd_scorers(config):
@@ -194,7 +181,7 @@ def cmd_watch(config, match_id: str):
 def main():
     parser = argparse.ArgumentParser(description="football-wire terminal client")
     parser.add_argument("command", nargs="?", default="now",
-                        choices=["now", "live", "match", "scorers", "watch"],
+                        choices=["now", "live", "match", "summary", "scorers", "watch"],
                         help="Command (default: now)")
     parser.add_argument("arg", nargs="?", help="Match ID or group letter")
     parser.add_argument("--config", help="Path to config file")
@@ -204,7 +191,7 @@ def main():
 
     if args.command == "now":
         cmd_now(config)
-    elif args.command == "match":
+    elif args.command in ("match", "summary"):
         if not args.arg:
             print("Usage: python -m fbw.watch match <match_id>")
             return
