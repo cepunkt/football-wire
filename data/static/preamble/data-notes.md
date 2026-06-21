@@ -5,6 +5,9 @@ Shot confidence: shot + position + goal placement = on target (high confidence).
   Shot + position only = off target (medium). Shot only = attempt/blocked (low).
 Coordinates: 0-100 scale on both axes, mapped to 105m x 68m pitch.
   Enriched with distance from goal, pitch zone, and attacker-relative side.
+Enrichment: >> ENRICHED: lines are updates to prior events, not new
+  events. >> CORRECTED: lines fix earlier data. Both can appear for
+  any event type (shots, goals, fouls, offsides).
 Data quality: the source API has known issues:
   - Event ordering: events may arrive out of sequence. !! marks late arrivals.
   - Substitutions: ON/OFF tags are resolved from roster tracking.
