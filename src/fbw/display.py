@@ -269,7 +269,13 @@ def _format_event(
         abbr = _team_abbr(sm, team_id)
         name = player_name(pid)
         pos = _position_suffix(data, direction, team_id, home_id, "foul")
-        return f"{time}FOUL                    {abbr} | {name} commits a foul.{pos} {score_str}"
+        foul_line = f"{time}FOUL                    {abbr} | {name} commits a foul.{pos} {score_str}"
+
+        # Free kick follow-up with danger assessment
+        fk_line = _format_free_kick(data, direction, team_id, home_id, sm)
+        if fk_line:
+            return f"{foul_line}\n{time}  → FREE KICK             {fk_line}"
+        return foul_line
 
     # --- Offsides ---
     if event_type == "offside":
@@ -341,6 +347,67 @@ def _format_event(
         return f"{time}{desc} {score_str}"
     # Last resort: show what we have so nothing is invisible
     return f"{time}[{event_type or 'UNK'}]                 {score_str}"
+
+
+def _format_free_kick(
+    data: dict,
+    direction: PlayDirection | None,
+    team_id: str,
+    home_team_id: str,
+    sm: MatchStateMachine,
+) -> str | None:
+    """Format free kick context from a foul's position.
+
+    The free kick is awarded to the OTHER team at the foul location.
+    Returns danger assessment based on distance and angle to goal.
+    """
+    px = data.get("position_x")
+    py = data.get("position_y")
+    if px is None or py is None:
+        return None
+    if not direction or not team_id:
+        return None
+
+    px, py = float(px), float(py)
+
+    # The free kick goes to the opposing team
+    fouling_team = sm._team_for_id(team_id)
+    if not fouling_team:
+        return None
+    if fouling_team.team_id == sm.home.team_id:
+        fk_team = sm.away
+    else:
+        fk_team = sm.home
+    fk_abbr = fk_team.abbreviation
+
+    # Distance from the fouling team's goal (= opponent's attacking target)
+    attacks_high = direction.attacks_high_x(fk_team.team_id, sm.home.team_id)
+    if attacks_high:
+        dist_to_goal = (100 - px) / 100 * PITCH_LENGTH_M
+    else:
+        dist_to_goal = px / 100 * PITCH_LENGTH_M
+
+    # Angle — how central is the position
+    # Y=50 is central, extremes are wide
+    centrality = abs(py - 50)
+
+    # Danger classification
+    if dist_to_goal <= 20:
+        if centrality <= 20:
+            danger = "DANGEROUS — shooting range, central"
+        else:
+            danger = "promising — crossing position"
+    elif dist_to_goal <= 30:
+        if centrality <= 15:
+            danger = "promising — edge of shooting range"
+        else:
+            danger = "crossing position"
+    elif dist_to_goal <= 45:
+        danger = "midfield"
+    else:
+        danger = "deep, no immediate threat"
+
+    return f"{fk_abbr} | {dist_to_goal:.0f}m from goal — {danger}"
 
 
 def _position_suffix(
