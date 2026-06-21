@@ -473,7 +473,10 @@ def cmd_watch(config, match_id: str):
 # --- Main ---
 
 def main():
-    parser = argparse.ArgumentParser(description="football-wire terminal client")
+    parser = argparse.ArgumentParser(
+        description="football-wire terminal client",
+        epilog="For lookups (groups, squads, players): python -m fbw query",
+    )
     parser.add_argument("command", nargs="?", default="now",
                         choices=["now", "live", "match", "summary", "group",
                                  "groups", "squad", "scorers", "watch"],

@@ -199,6 +199,11 @@ def main():
     proc_p.add_argument("--match", action="append",
                         help="Process specific match ID (repeatable)")
 
+    # query — pass remaining args to query module
+    query_p = sub.add_parser("query", help="Lookup data (groups, squads, matches, players)")
+    query_p.add_argument("query_args", nargs=argparse.REMAINDER,
+                         help="Passed to query tool")
+
     args = parser.parse_args()
 
     if args.config:
@@ -210,6 +215,11 @@ def main():
         cmd_fetch(args)
     elif args.command == "process":
         cmd_process(args)
+    elif args.command == "query":
+        from .query import main as query_main
+        # Re-parse with query's own parser
+        sys.argv = ["fbw query"] + (args.query_args or [])
+        query_main()
     else:
         parser.print_help()
 
