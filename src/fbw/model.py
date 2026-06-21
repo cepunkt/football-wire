@@ -160,8 +160,10 @@ class Minute:
 # --- Coordinates ---
 
 # FIFA World Cup standard pitch dimensions
-PITCH_LENGTH = 105.0  # metres
-PITCH_WIDTH = 68.0    # metres
+PITCH_LENGTH = 105.0   # metres
+PITCH_WIDTH = 68.0     # metres
+GOAL_WIDTH_M = 7.32    # metres (post to post)
+GOAL_HEIGHT_M = 2.44   # metres (ground to crossbar)
 
 
 @dataclass(frozen=True)
@@ -238,9 +240,24 @@ class ShotPosition:
 
 @dataclass(frozen=True)
 class GoalPlacement:
-    """Where the ball hit the goal frame. From API GoalGatePosition."""
+    """Where the ball hit the goal frame. From API GoalGatePosition.
+
+    Coordinates are from the attacker's perspective:
+      X: 0-100 across the goal mouth (post to post, 7.32m)
+      Y: 0-100 from ground to crossbar (2.44m)
+    """
     raw_x: float
     raw_y: float
+
+    @property
+    def offset_m(self) -> float:
+        """Distance from centre of goal in metres."""
+        return abs(self.raw_x - 50) / 100 * GOAL_WIDTH_M
+
+    @property
+    def height_m(self) -> float:
+        """Height from ground in metres."""
+        return self.raw_y / 100 * GOAL_HEIGHT_M
 
     @property
     def height(self) -> str:

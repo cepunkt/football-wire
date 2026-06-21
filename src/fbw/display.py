@@ -164,7 +164,10 @@ def format_shot(data: dict) -> str:
     gy = data.get("gate_y")
     if gx is not None and gy is not None:
         gp = GoalPlacement(raw_x=float(gx), raw_y=float(gy))
-        parts.append(f"placed {gp.height}, {gp.side} ({float(gx):.0f},{float(gy):.0f})")
+        parts.append(
+            f"placed {gp.height}, {gp.side} "
+            f"({gp.offset_m:.1f}m off centre, {gp.height_m:.1f}m high)"
+        )
 
     if parts:
         return "| " + " ".join(parts) + " "
