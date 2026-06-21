@@ -9,11 +9,6 @@ football-wire uses open data from the following sources:
 - **Data:** WC2026 teams, groups, squads (with clubs), stadiums
 - **Note:** Upstream source at https://github.com/openfootball/worldcup
 
-## Wikimedia Commons
-- **Source:** https://commons.wikimedia.org
-- **Data:** Team kit/jersey schematics (PNG)
-- **License:** Various (check individual files)
-
 ## FIFA Public API
 - **Source:** https://api.fifa.com/api/v3/
 - **Data:** Live match data, timelines, schedules

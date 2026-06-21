@@ -71,7 +71,6 @@ First public release. Complete rebuild from the wc26 companion PoC.
 
 ### Static Data (WC2026)
 - 48 team profiles with tournament observations
-- 48 team jersey schematics from Wikimedia
 - 16 stadiums with capacity, altitude, coordinates
 - Tournament lore layer (team narratives, group analysis, match reports)
 - Localised display strings (en, de-at)
