@@ -453,15 +453,35 @@ class TestPlayDirection:
         assert state.direction is not None
         assert state.direction.home_end == AttackEnd.HIGH_X
 
-    def test_direction_not_recommitted_after_lock(self, rules):
-        """Once committed, new shots don't change the direction."""
+    def test_direction_stable_with_few_contradictions(self, rules):
+        """1-2 contradicting shots don't flip committed direction."""
         sm = _make_sm(rules)
         sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
         sm.apply(self._shot_input("2'", "home_id", 88.0))
         sm.apply(self._shot_input("4'", "home_id", 95.0))
         assert sm.direction.home_end == AttackEnd.HIGH_X
-        # Contradictory shots after commitment
+        # 2 contradictory shots — below correction threshold of 3
         sm.apply(self._shot_input("30'", "home_id", 10.0))
         sm.apply(self._shot_input("32'", "home_id", 15.0))
         # Direction unchanged
         assert sm.direction.home_end == AttackEnd.HIGH_X
+
+    def test_direction_corrected_with_enough_contradictions(self, rules):
+        """3+ contradicting events flip the committed direction."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        # Commit HIGH_X from 2 shots
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        sm.apply(self._shot_input("4'", "home_id", 95.0))
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+        # 3 contradicting shots — triggers correction
+        sm.apply(self._shot_input("10'", "home_id", 10.0))
+        sm.apply(self._shot_input("12'", "home_id", 8.0))
+        sm.apply(self._shot_input("15'", "home_id", 5.0))
+        # Direction flipped
+        assert sm.direction.home_end == AttackEnd.LOW_X
+        # Correction emitted via side_outputs
+        corrections = [o for o in sm.side_outputs
+                       if "direction_corrected" in (o.flags or [])
+                       or o.data.get("type") == "direction_determined"]
+        assert len(corrections) > 0

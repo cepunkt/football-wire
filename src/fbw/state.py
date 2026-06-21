@@ -325,7 +325,8 @@ class MatchStateMachine:
 
     # --- Play direction inference ---
 
-    _DIRECTION_COMMIT_THRESHOLD = 2  # agreeing observations needed
+    _DIRECTION_COMMIT_THRESHOLD = 2    # agreeing observations to commit
+    _DIRECTION_CORRECT_THRESHOLD = 3  # contradicting observations to re-commit
 
     def _record_direction_evidence(
         self, team_id: str, raw_x: float, event_type: str, minute: MatchMinute,
@@ -333,14 +334,11 @@ class MatchStateMachine:
         """Record a directional observation and try to commit.
 
         Returns a StateOutput announcing the direction if we just
-        committed, None otherwise.
+        committed or corrected, None otherwise.
 
-        Evidence sources: shots (most reliable — taken near opponent's
-        goal) and offsides (happen in the attacking half).
+        Evidence sources: shots, corners, offsides, penalties.
+        Keeps recording after commit for self-correction.
         """
-        if self._direction_committed:
-            return None
-
         if not team_id:
             return None
 
@@ -350,7 +348,11 @@ class MatchStateMachine:
         )
         self._direction_evidence.append(ev)
 
-        return self._try_commit_direction(minute)
+        if not self._direction_committed:
+            return self._try_commit_direction(minute)
+
+        # Post-commit: check for contradicting evidence
+        return self._check_direction_correction(minute)
 
     def _try_commit_direction(self, minute: MatchMinute) -> StateOutput | None:
         """Try to determine play direction from accumulated evidence.
@@ -371,6 +373,53 @@ class MatchStateMachine:
             for end, count in ends.items():
                 if count >= self._DIRECTION_COMMIT_THRESHOLD:
                     return self._commit_direction(team_id, end, count, minute)
+
+        return None
+
+    def _check_direction_correction(self, minute: MatchMinute) -> StateOutput | None:
+        """Check if post-commit evidence contradicts the current direction.
+
+        If 3+ observations point the opposite way from what we committed,
+        flip the direction and emit a correction.
+        """
+        if not self.direction:
+            return None
+
+        # Count evidence that contradicts current direction
+        contradictions = 0
+        for ev in self._direction_evidence:
+            expected_end = self.direction.for_team(ev.team_id, self.home.team_id)
+            if ev.inferred_end != expected_end:
+                contradictions += 1
+
+        if contradictions >= self._DIRECTION_CORRECT_THRESHOLD:
+            # Flip direction
+            self.direction = self.direction.swapped()
+            # Clear evidence — start fresh from the corrected state
+            self._direction_evidence.clear()
+
+            home_abbr = self.home.abbreviation
+            away_abbr = self.away.abbreviation
+            home_arrow = "→ high X" if self.direction.home_end == AttackEnd.HIGH_X else "→ low X"
+            away_arrow = "→ high X" if self.direction.away_end == AttackEnd.HIGH_X else "→ low X"
+
+            return StateOutput(
+                kind=OutputKind.CORRECTION,
+                minute=minute,
+                data={
+                    "type": "direction_determined",
+                    "home_end": self.direction.home_end.value,
+                    "away_end": self.direction.away_end.value,
+                    "confidence": contradictions,
+                    "description": (
+                        f"Direction CORRECTED: {home_abbr} {home_arrow}, "
+                        f"{away_abbr} {away_arrow} "
+                        f"({contradictions} contradicting events)"
+                    ),
+                },
+                trust=SourceTrust.EVENT,
+                flags=["direction_corrected"],
+            )
 
         return None
 
