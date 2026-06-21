@@ -43,14 +43,14 @@ def cmd_fetch(args):
             pull_match(mid, config, log_fn=log)
         return
 
-    # Auto: pull today's matches
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    today_matches = [m for m in schedule if (m.get("Date") or "")[:10] == today]
-    log(f"Today: {len(today_matches)} matches")
+    # Auto: pull matches in tracking window (1h ago to 6h ahead)
+    from .daemon import get_trackable_matches
+    upcoming = get_trackable_matches(schedule)
+    log(f"Trackable: {len(upcoming)} matches (1h ago to 6h ahead)")
 
-    for m in today_matches:
+    for m in upcoming:
         mid = m.get("IdMatch", "?")
-        pull_match(mid, config, log_fn=log)
+        pull_match(mid, config=config, log_fn=log)
 
 
 def cmd_process(args):

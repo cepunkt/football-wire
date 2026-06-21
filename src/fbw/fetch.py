@@ -397,9 +397,36 @@ def backfill(config: Config | None = None, force: bool = False,
         if not force:
             match_file = config.paths.raw_matches_dir / f"{mid}.json"
             events_file = config.paths.raw_events_dir / f"{mid}.jsonl"
-            if (match_file.exists() and match_file.stat().st_size > 10000
-                    and events_file.exists()):
-                continue
+            if match_file.exists() and events_file.exists():
+                # Check if data looks complete:
+                # - match file should be substantial (>10KB)
+                # - events file should have a PERIOD_END event for 2H
+                match_ok = match_file.stat().st_size > 10000
+                events_ok = False
+                if events_file.stat().st_size > 0:
+                    # Check: should have a PERIOD_END after 85' (2H end)
+                    try:
+                        import json as _json
+                        with open(events_file) as ef:
+                            lines = ef.readlines()
+                        for line in reversed(lines):
+                            ev = _json.loads(line.strip())
+                            if ev.get("Type") == 8:  # PERIOD_END
+                                minute_str = ev.get("MatchMinute", "")
+                                # Parse minute — must be 90'+ for full match
+                                m_val = minute_str.replace("'", "").split("+")[0]
+                                try:
+                                    if int(m_val) >= 85:
+                                        events_ok = True
+                                except (ValueError, TypeError):
+                                    pass
+                                break  # only check the last PERIOD_END
+                    except Exception:
+                        pass
+                if match_ok and events_ok:
+                    continue
+                elif not force:
+                    log_fn(f"  #{mid}: incomplete data, re-fetching")
 
         stage_id = m.get("IdStage", "")
         result = pull_match(mid, stage_id=stage_id, config=config, log_fn=log_fn)
