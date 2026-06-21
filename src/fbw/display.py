@@ -380,9 +380,9 @@ def _format_free_kick(
         fk_team = sm.home
     fk_abbr = fk_team.abbreviation
 
-    # Distance from the fouling team's goal (= opponent's attacking target)
-    attacks_high = direction.attacks_high_x(fk_team.team_id, sm.home.team_id)
-    if attacks_high:
+    # Distance from the goal the free kick team is attacking
+    fk_attacks_high = direction.attacks_high_x(fk_team.team_id, sm.home.team_id)
+    if fk_attacks_high:
         dist_to_goal = (100 - px) / 100 * PITCH_LENGTH_M
     else:
         dist_to_goal = px / 100 * PITCH_LENGTH_M
