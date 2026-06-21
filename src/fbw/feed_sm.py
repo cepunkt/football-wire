@@ -301,7 +301,15 @@ def _format_position(data: dict, sm: MatchStateMachine) -> str:
         else:
             zone = "midfield"
 
-        return f" | {half}, {zone} ({px:.0f},{py:.0f})"
+        # Side from attacker's perspective
+        # Normalize Y same way ShotPosition does
+        if attacks_high:
+            ny = py             # keep Y
+        else:
+            ny = 100.0 - py     # flip Y
+        side = "left" if ny > 60 else "right" if ny < 40 else "central"
+
+        return f" | {half}, {zone}, {side} ({px:.0f},{py:.0f})"
 
     # Neutral fallback (no direction known)
     if 35 <= px <= 65:
