@@ -643,6 +643,9 @@ class SMFeedEngine:
             py = cache.get("PositionY")
             if px is None or py is None:
                 return
+            # Mark both as done to prevent duplicate emission
+            self._emitted_fields[eid].add("PositionX")
+            self._emitted_fields[eid].add("PositionY")
             from .model import ShotPosition
             sp = ShotPosition.from_raw(float(px), float(py))
             minute = original.minute
