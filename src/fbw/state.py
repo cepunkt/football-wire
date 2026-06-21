@@ -325,19 +325,19 @@ class MatchStateMachine:
 
     # --- Play direction inference ---
 
-    _DIRECTION_COMMIT_THRESHOLD = 2    # agreeing observations to commit
-    _DIRECTION_CORRECT_THRESHOLD = 3  # contradicting observations to re-commit
+    _DIRECTION_COMMIT_THRESHOLD = 2  # agreeing observations to commit
 
     def _record_direction_evidence(
         self, team_id: str, raw_x: float, event_type: str, minute: MatchMinute,
     ) -> StateOutput | None:
-        """Record a directional observation and try to commit.
-
-        Returns a StateOutput announcing the direction if we just
-        committed or corrected, None otherwise.
+        """Record a directional observation and try to commit or correct.
 
         Evidence sources: shots, corners, offsides, penalties.
         Keeps recording after commit for self-correction.
+
+        Correction logic: if the opposite end accumulates more evidence
+        than the committed end, flip. Simple tally comparison — no
+        separate contradiction threshold needed.
         """
         if not team_id:
             return None
@@ -348,92 +348,69 @@ class MatchStateMachine:
         )
         self._direction_evidence.append(ev)
 
+        # Count all evidence: {AttackEnd → total count across teams}
+        tally = self._direction_tally()
+
         if not self._direction_committed:
-            return self._try_commit_direction(minute)
+            return self._try_commit_direction(tally, minute)
 
-        # Post-commit: check for contradicting evidence
-        return self._check_direction_correction(minute)
+        return self._check_direction_correction(tally, minute)
 
-    def _try_commit_direction(self, minute: MatchMinute) -> StateOutput | None:
-        """Try to determine play direction from accumulated evidence.
+    def _direction_tally(self) -> dict[AttackEnd, int]:
+        """Count evidence for each end, normalised to home team's perspective.
 
-        Counts how many observations agree per team per end.
-        Commits when any team has >= threshold observations pointing
-        the same direction.
+        Maps all evidence to what it implies for the home team's direction,
+        so we can compare HIGH_X vs LOW_X as a simple tally.
         """
-        # Count: team_id → {AttackEnd → count}
-        counts: dict[str, dict[AttackEnd, int]] = {}
+        tally = {AttackEnd.HIGH_X: 0, AttackEnd.LOW_X: 0}
         for ev in self._direction_evidence:
-            if ev.team_id not in counts:
-                counts[ev.team_id] = {AttackEnd.HIGH_X: 0, AttackEnd.LOW_X: 0}
-            counts[ev.team_id][ev.inferred_end] += 1
+            # What does this evidence imply for the home team?
+            if ev.team_id == self.home.team_id:
+                tally[ev.inferred_end] += 1
+            elif ev.team_id == self.away.team_id:
+                # Away attacking HIGH_X means home attacks LOW_X
+                tally[ev.inferred_end.opposite] += 1
+        return tally
 
-        # Check if any team has enough agreeing evidence
-        for team_id, ends in counts.items():
-            for end, count in ends.items():
-                if count >= self._DIRECTION_COMMIT_THRESHOLD:
-                    return self._commit_direction(team_id, end, count, minute)
-
+    def _try_commit_direction(
+        self, tally: dict[AttackEnd, int], minute: MatchMinute,
+    ) -> StateOutput | None:
+        """Commit direction when one end has >= threshold evidence."""
+        for end, count in tally.items():
+            if count >= self._DIRECTION_COMMIT_THRESHOLD:
+                return self._commit_direction(end, count, minute)
         return None
 
-    def _check_direction_correction(self, minute: MatchMinute) -> StateOutput | None:
-        """Check if post-commit evidence contradicts the current direction.
+    def _check_direction_correction(
+        self, tally: dict[AttackEnd, int], minute: MatchMinute,
+    ) -> StateOutput | None:
+        """Correct direction if the opposite end has more evidence.
 
-        If 3+ observations point the opposite way from what we committed,
-        flip the direction and emit a correction.
+        Simple tally comparison — if the non-committed end outnumbers
+        the committed end, flip. One bad coordinate can't flip because
+        it needs to outnumber the good data.
         """
         if not self.direction:
             return None
 
-        # Count evidence that contradicts current direction
-        contradictions = 0
-        for ev in self._direction_evidence:
-            expected_end = self.direction.for_team(ev.team_id, self.home.team_id)
-            if ev.inferred_end != expected_end:
-                contradictions += 1
+        committed_end = self.direction.home_end
+        opposite_end = committed_end.opposite
 
-        if contradictions >= self._DIRECTION_CORRECT_THRESHOLD:
-            # Flip direction
-            self.direction = self.direction.swapped()
-            # Clear evidence — start fresh from the corrected state
-            self._direction_evidence.clear()
-
-            home_abbr = self.home.abbreviation
-            away_abbr = self.away.abbreviation
-            home_arrow = "→ high X" if self.direction.home_end == AttackEnd.HIGH_X else "→ low X"
-            away_arrow = "→ high X" if self.direction.away_end == AttackEnd.HIGH_X else "→ low X"
-
-            return StateOutput(
-                kind=OutputKind.CORRECTION,
-                minute=minute,
-                data={
-                    "type": "direction_determined",
-                    "home_end": self.direction.home_end.value,
-                    "away_end": self.direction.away_end.value,
-                    "confidence": contradictions,
-                    "description": (
-                        f"Direction CORRECTED: {home_abbr} {home_arrow}, "
-                        f"{away_abbr} {away_arrow} "
-                        f"({contradictions} contradicting events)"
-                    ),
-                },
-                trust=SourceTrust.EVENT,
-                flags=["direction_corrected"],
+        if tally[opposite_end] > tally[committed_end]:
+            return self._commit_direction(
+                opposite_end, tally[opposite_end], minute,
+                correction=True,
             )
 
         return None
 
     def _commit_direction(
-        self, team_id: str, end: AttackEnd, confidence: int, minute: MatchMinute,
+        self, home_end: AttackEnd, confidence: int, minute: MatchMinute,
+        correction: bool = False,
     ) -> StateOutput:
-        """Lock in the play direction from observed evidence."""
-        is_home = (team_id == self.home.team_id)
-        home_end = end if is_home else end.opposite
+        """Lock in the play direction. home_end is what home team attacks."""
         away_end = home_end.opposite
 
-        # Account for current phase — if we're in a swap phase (2H, ET2),
-        # the first-half direction is the opposite of what we observe now.
-        # We store the CURRENT direction, and swap on transitions.
         self.direction = PlayDirection(
             home_end=home_end,
             away_end=away_end,
@@ -448,8 +425,12 @@ class MatchStateMachine:
         home_arrow = "→ high X" if home_end == AttackEnd.HIGH_X else "→ low X"
         away_arrow = "→ high X" if away_end == AttackEnd.HIGH_X else "→ low X"
 
+        prefix = "Direction CORRECTED" if correction else "Play direction"
+        kind = OutputKind.CORRECTION if correction else OutputKind.EVENT
+        flag = "direction_corrected" if correction else "direction"
+
         return StateOutput(
-            kind=OutputKind.EVENT,
+            kind=kind,
             minute=minute,
             data={
                 "type": "direction_determined",
@@ -457,13 +438,13 @@ class MatchStateMachine:
                 "away_end": away_end.value,
                 "confidence": confidence,
                 "description": (
-                    f"Play direction: {home_abbr} {home_arrow}, "
+                    f"{prefix}: {home_abbr} {home_arrow}, "
                     f"{away_abbr} {away_arrow} "
-                    f"(inferred from {confidence} events)"
+                    f"(from {confidence} events)"
                 ),
             },
             trust=SourceTrust.EVENT,
-            flags=["direction"],
+            flags=[flag],
         )
 
     def _swap_direction(self) -> None:

@@ -363,17 +363,14 @@ class TestPlayDirection:
         assert sm.direction.home_end == AttackEnd.HIGH_X
 
     def test_mixed_team_evidence(self, rules):
-        """One shot from each team, both agreeing on layout."""
+        """One shot from each team, both agreeing on layout → commits."""
         sm = _make_sm(rules)
         sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
         # Home shoots toward high X
         sm.apply(self._shot_input("2'", "home_id", 88.0))
-        # Away shoots toward low X — same layout
+        # Away shoots toward low X — same layout, implies home HIGH_X
         sm.apply(self._shot_input("5'", "away_id", 12.0))
-        # Each team has 1 observation — neither reaches threshold alone
-        assert sm.direction is None
-        # Another home shot tips it
-        sm.apply(self._shot_input("8'", "home_id", 82.0))
+        # Two agreeing observations (normalised to home perspective) → committed
         assert sm.direction is not None
         assert sm.direction.home_end == AttackEnd.HIGH_X
 
@@ -466,22 +463,36 @@ class TestPlayDirection:
         # Direction unchanged
         assert sm.direction.home_end == AttackEnd.HIGH_X
 
-    def test_direction_corrected_with_enough_contradictions(self, rules):
-        """3+ contradicting events flip the committed direction."""
+    def test_direction_corrected_when_opposite_outnumbers(self, rules):
+        """Direction flips when opposite end has more evidence."""
         sm = _make_sm(rules)
         sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
         # Commit HIGH_X from 2 shots
         sm.apply(self._shot_input("2'", "home_id", 88.0))
         sm.apply(self._shot_input("4'", "home_id", 95.0))
         assert sm.direction.home_end == AttackEnd.HIGH_X
-        # 3 contradicting shots — triggers correction
+        # 2 contradicting — tied at 2-2, no flip
         sm.apply(self._shot_input("10'", "home_id", 10.0))
         sm.apply(self._shot_input("12'", "home_id", 8.0))
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+        # 3rd contradicting — LOW_X leads 3-2, flip
         sm.apply(self._shot_input("15'", "home_id", 5.0))
-        # Direction flipped
         assert sm.direction.home_end == AttackEnd.LOW_X
         # Correction emitted via side_outputs
         corrections = [o for o in sm.side_outputs
                        if "direction_corrected" in (o.flags or [])
                        or o.data.get("type") == "direction_determined"]
         assert len(corrections) > 0
+
+    def test_direction_not_flipped_when_tied(self, rules):
+        """Equal evidence for both ends doesn't flip."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        sm.apply(self._shot_input("4'", "home_id", 95.0))
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+        # 2 contradicting — tied 2-2
+        sm.apply(self._shot_input("10'", "home_id", 10.0))
+        sm.apply(self._shot_input("12'", "home_id", 8.0))
+        # Still HIGH_X — tie doesn't flip
+        assert sm.direction.home_end == AttackEnd.HIGH_X
