@@ -26,7 +26,7 @@
     "nickname_local": "Socceroos",
     "fifa_ranking": 27,
     "kit_home": "gold/green",
-    "kit_away": "dark blue",
+    "kit_away": "coral/teal gradient",
     "population_millions": 26.5
   },
   "AUT": {
@@ -46,7 +46,7 @@
     "nickname_local": "De Rode Duivels (Dutch) / Les Diables Rouges (French) / Die Roten Teufel (German)",
     "fifa_ranking": 9,
     "kit_home": "red",
-    "kit_away": "white",
+    "kit_away": "light blue",
     "population_millions": 11.7
   },
   "BIH": {
@@ -76,7 +76,7 @@
     "nickname_local": "Les Rouges (French) / The Reds (English)",
     "fifa_ranking": 30,
     "kit_home": "red",
-    "kit_away": "white",
+    "kit_away": "black",
     "population_millions": 40.0
   },
   "CIV": {
@@ -86,7 +86,7 @@
     "nickname_local": "Les Éléphants",
     "fifa_ranking": 33,
     "kit_home": "orange/green",
-    "kit_away": "green",
+    "kit_away": "white",
     "population_millions": 28.0
   },
   "COD": {
@@ -95,8 +95,8 @@
     "nickname_fan": null,
     "nickname_local": "Les Léopards",
     "fifa_ranking": 46,
-    "kit_home": "blue/yellow",
-    "kit_away": "red",
+    "kit_home": "light blue",
+    "kit_away": "white",
     "population_millions": 102.0
   },
   "COL": {
@@ -136,8 +136,8 @@
     "nickname_local": "De Blauwe Golf (Papiamentu/Dutch)",
     "fifa_ranking": 82,
     "kit_home": "blue",
-    "kit_away": "white",
-    "population_millions": 0.158
+    "kit_away": "pastel yellow",
+    "population_millions": 0.185
   },
   "CZE": {
     "flag": "🇨🇿",
@@ -146,7 +146,7 @@
     "nickname_local": "Nároďák / Repre",
     "fifa_ranking": 40,
     "kit_home": "red",
-    "kit_away": "blue",
+    "kit_away": "white",
     "population_millions": 10.8
   },
   "ECU": {
@@ -215,8 +215,8 @@
     "nickname_fan": null,
     "nickname_local": "Black Stars",
     "fifa_ranking": 73,
-    "kit_home": "black/white",
-    "kit_away": "red",
+    "kit_home": "white/black star",
+    "kit_away": "yellow/gold",
     "population_millions": 34.0
   },
   "HAI": {
@@ -245,8 +245,8 @@
     "nickname_fan": null,
     "nickname_local": "أُسُودُ الرَّافِدَيْن (Usood al-Rafidayn)",
     "fifa_ranking": 57,
-    "kit_home": "green",
-    "kit_away": "white",
+    "kit_home": "white",
+    "kit_away": "deep green",
     "population_millions": 43.0
   },
   "JOR": {
@@ -256,8 +256,8 @@
     "nickname_local": "النشامى (Al-Nashama)",
     "fifa_ranking": 63,
     "kit_home": "white/red",
-    "kit_away": "white",
-    "population_millions": 11.0
+    "kit_away": "red",
+    "population_millions": 11.5
   },
   "JPN": {
     "flag": "🇯🇵",
@@ -276,7 +276,7 @@
     "nickname_local": "Taegeukjeonsa (태극전사)",
     "fifa_ranking": 25,
     "kit_home": "red",
-    "kit_away": "white",
+    "kit_away": "purple/violet",
     "population_millions": 51.7
   },
   "KSA": {
@@ -306,7 +306,7 @@
     "nickname_local": "El Tri / El Tricolor",
     "fifa_ranking": 14,
     "kit_home": "dark green",
-    "kit_away": "white",
+    "kit_away": "black",
     "population_millions": 129.0
   },
   "NED": {
@@ -326,7 +326,7 @@
     "nickname_local": "Landslaget",
     "fifa_ranking": 31,
     "kit_home": "red/white/blue",
-    "kit_away": "white",
+    "kit_away": "black",
     "population_millions": 5.5
   },
   "NZL": {
@@ -335,8 +335,8 @@
     "nickname_fan": null,
     "nickname_local": "All Whites",
     "fifa_ranking": 85,
-    "kit_home": "all white",
-    "kit_away": "all black",
+    "kit_home": "black",
+    "kit_away": "white",
     "population_millions": 5.2
   },
   "PAN": {
@@ -346,7 +346,7 @@
     "nickname_local": "Los Canaleros / La Marea Roja",
     "fifa_ranking": 34,
     "kit_home": "red",
-    "kit_away": "blue",
+    "kit_away": "white",
     "population_millions": 4.4
   },
   "PAR": {
@@ -386,7 +386,7 @@
     "nickname_local": "Bafana Bafana",
     "fifa_ranking": 60,
     "kit_home": "yellow/green",
-    "kit_away": "white",
+    "kit_away": "green",
     "population_millions": 60.0
   },
   "SCO": {
@@ -396,7 +396,7 @@
     "nickname_local": null,
     "fifa_ranking": 42,
     "kit_home": "dark blue",
-    "kit_away": "white",
+    "kit_away": "red/scarlet",
     "population_millions": 5.5
   },
   "SEN": {
@@ -426,7 +426,7 @@
     "nickname_local": "Blågult / Tre Kronor (football context)",
     "fifa_ranking": 38,
     "kit_home": "yellow/blue",
-    "kit_away": "blue/yellow",
+    "kit_away": "royal blue",
     "population_millions": 10.5
   },
   "TUN": {
@@ -436,7 +436,7 @@
     "nickname_local": "نسور قرطاج (Nusur Qarthaj)",
     "fifa_ranking": 45,
     "kit_home": "white/red",
-    "kit_away": "white",
+    "kit_away": "red",
     "population_millions": 12.5
   },
   "TUR": {
@@ -445,7 +445,7 @@
     "nickname_fan": null,
     "nickname_local": "Ay-Yıldızlılar / Bizim Çocuklar",
     "fifa_ranking": 22,
-    "kit_home": "white/red",
+    "kit_home": "red",
     "kit_away": "white",
     "population_millions": 85.0
   },
@@ -456,7 +456,7 @@
     "nickname_local": "La Celeste",
     "fifa_ranking": 16,
     "kit_home": "sky blue",
-    "kit_away": "white",
+    "kit_away": "deep navy",
     "population_millions": 3.4
   },
   "USA": {
@@ -465,8 +465,8 @@
     "nickname_fan": "The Stars and Stripes",
     "nickname_local": "USMNT / The Stars and Stripes",
     "fifa_ranking": 17,
-    "kit_home": "red/white stripes",
-    "kit_away": "blue",
+    "kit_home": "white/red stripes",
+    "kit_away": "black",
     "population_millions": 335.0
   },
   "UZB": {
@@ -476,7 +476,7 @@
     "nickname_local": "Oq bo'rilar (Uzbek)",
     "fifa_ranking": 50,
     "kit_home": "blue",
-    "kit_away": "blue",
-    "population_millions": 36.0
+    "kit_away": "white",
+    "population_millions": 37.0
   }
 }
