@@ -265,6 +265,10 @@ class MatchStateMachine:
         # Pending shot data waiting for goal merge
         self._pending_shots: dict[str, dict] = {}  # key: "minute|player_id"
 
+        # Side-channel outputs — events generated internally (direction, etc.)
+        # that aren't returned by apply(). Consumers should drain this.
+        self.side_outputs: list[StateOutput] = []
+
         # Play direction tracking
         self.direction: PlayDirection | None = None
         self._direction_evidence: list[DirectionEvidence] = []
@@ -891,10 +895,9 @@ class MatchStateMachine:
                 event_type="shot", minute=inp.minute,
             )
             if direction_output:
-                # Stash direction announcement — we'll emit the shot
-                # event normally and let the consumer pick up direction
-                # from get_state().
-                self.events.append(direction_output)
+                # Side-channel: direction announcement isn't returned
+                # by apply(). Consumer drains side_outputs separately.
+                self.side_outputs.append(direction_output)
 
         # Check: is there a goal at this minute for this player?
         shot_key = f"{inp.minute.base}|{player_id}"
