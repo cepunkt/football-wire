@@ -252,9 +252,14 @@ class GoalPlacement:
 
     @property
     def side(self) -> str:
-        if self.raw_x < 35:
+        """Goal gate side from attacker's perspective.
+
+        X runs 0-100 across the goal mouth (post to post, 7.32m).
+        Centre band is the middle 20% (~1.5m either side of centre).
+        """
+        if self.raw_x < 40:
             return "left"
-        elif self.raw_x > 65:
+        elif self.raw_x > 60:
             return "right"
         return "centre"
 
