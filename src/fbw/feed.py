@@ -53,12 +53,18 @@ def cmd_snapshot(config, match_id: str | None = None):
     live = read_live(config)
     matches = live.get("matches", {})
 
+    def _fmt_match(mid, info):
+        home = info.get('home', '?')
+        away = info.get('away', '?')
+        hs = info.get('home_score')
+        as_ = info.get('away_score')
+        score = f"{hs}-{as_}" if hs is not None else "vs"
+        status = info.get('status', '?')
+        return f"[{status}] {home} {score} {away} (#{mid})"
+
     if match_id:
         if match_id in matches:
-            info = matches[match_id]
-            print(f"[{info.get('status', '?')}] {info.get('home', '?')} "
-                  f"{info.get('home_score', '?')}-{info.get('away_score', '?')} "
-                  f"{info.get('away', '?')} (#{match_id})")
+            print(_fmt_match(match_id, matches[match_id]))
         else:
             print(f"No live data for #{match_id}")
         return
@@ -67,9 +73,7 @@ def cmd_snapshot(config, match_id: str | None = None):
         print("No tracked matches")
         return
     for mid, info in matches.items():
-        print(f"[{info.get('status', '?')}] {info.get('home', '?')} "
-              f"{info.get('home_score', '?')}-{info.get('away_score', '?')} "
-              f"{info.get('away', '?')} (#{mid})")
+        print(_fmt_match(mid, info))
 
 
 

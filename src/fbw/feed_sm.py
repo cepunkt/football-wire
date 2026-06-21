@@ -476,7 +476,7 @@ class SMFeedEngine:
 
         minute_str = f"{int(current)}'"
         config = get_config()
-        if config.sources.espn:
+        if config.espn.enabled or config.sources.espn:
             try:
                 from .espn import get_latest_stats, format_espn_stats
                 espn_row = get_latest_stats(

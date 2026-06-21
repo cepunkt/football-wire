@@ -207,8 +207,8 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
     log("")
 
     # ESPN polling setup (opt-in, per-match timers)
-    espn_enabled = config.sources.espn
-    espn_interval = config.sources.espn_interval
+    espn_enabled = config.espn.enabled or config.sources.espn
+    espn_interval = config.espn.poll_interval
     last_espn_poll: dict[str, float] = {}  # per match_id
     espn_post_match: dict[str, float] = {}  # match_id → finished_at (keep polling 30min)
     if espn_enabled:

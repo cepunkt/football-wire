@@ -60,7 +60,7 @@ Tests use real API failure fixtures from actual WC2026 matches. No mocks, no net
 1. Add to `EventType` enum in `model.py`
 2. Map to `InputCategory` in `adapters.py`
 3. Handle in the appropriate `_apply_*` method in `state.py`
-4. Format in `feed_sm.py` (and `format.py` for legacy)
+4. Format in `display.py`
 5. Add test with fixture data
 6. Document in `docs/api-fifa.md`
 

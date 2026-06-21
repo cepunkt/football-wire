@@ -40,7 +40,7 @@ def cmd_fetch(args):
 
     if args.match:
         for mid in args.match:
-            pull_match(mid, config, log_fn=log)
+            pull_match(mid, config=config, log_fn=log)
         return
 
     # Auto: pull matches in tracking window (1h ago to 6h ahead)
