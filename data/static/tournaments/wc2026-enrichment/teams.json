@@ -35,7 +35,7 @@
     "nickname_fan": null,
     "nickname_local": "Das Team / Das Nationalteam",
     "fifa_ranking": 24,
-    "kit_home": "red/white",
+    "kit_home": "red",
     "kit_away": "white",
     "population_millions": 9.1
   },
@@ -55,7 +55,7 @@
     "nickname_fan": null,
     "nickname_local": "Zmajevi (Dragons) / Zlatni Ljiljani (Golden Lilies)",
     "fifa_ranking": 64,
-    "kit_home": "blue",
+    "kit_home": "blue/yellow stripes",
     "kit_away": "white",
     "population_millions": 3.2
   },
@@ -115,7 +115,7 @@
     "nickname_fan": null,
     "nickname_local": "Tubarões Azuis (Portuguese)",
     "fifa_ranking": 67,
-    "kit_home": "blue",
+    "kit_home": "blue/yellow",
     "kit_away": "white",
     "population_millions": 0.53
   },
@@ -145,7 +145,7 @@
     "nickname_fan": "Repre",
     "nickname_local": "Nároďák / Repre",
     "fifa_ranking": 40,
-    "kit_home": "red/white",
+    "kit_home": "red",
     "kit_away": "blue",
     "population_millions": 10.8
   },
@@ -155,7 +155,7 @@
     "nickname_fan": null,
     "nickname_local": "La Tri / La Tricolor",
     "fifa_ranking": 23,
-    "kit_home": "yellow/blue",
+    "kit_home": "yellow",
     "kit_away": "blue",
     "population_millions": 18.0
   },
@@ -185,7 +185,7 @@
     "nickname_fan": "La Furia Roja",
     "nickname_local": "La Roja / La Furia Roja",
     "fifa_ranking": 2,
-    "kit_home": "red",
+    "kit_home": "red/yellow stripes",
     "kit_away": "white/blue",
     "population_millions": 47.5
   },
@@ -215,7 +215,7 @@
     "nickname_fan": null,
     "nickname_local": "Black Stars",
     "fifa_ranking": 73,
-    "kit_home": "white/yellow",
+    "kit_home": "black/white",
     "kit_away": "red",
     "population_millions": 34.0
   },
@@ -255,7 +255,7 @@
     "nickname_fan": null,
     "nickname_local": "النشامى (Al-Nashama)",
     "fifa_ranking": 63,
-    "kit_home": "red/white",
+    "kit_home": "white/red",
     "kit_away": "white",
     "population_millions": 11.0
   },
@@ -305,7 +305,7 @@
     "nickname_fan": null,
     "nickname_local": "El Tri / El Tricolor",
     "fifa_ranking": 14,
-    "kit_home": "green/white/red",
+    "kit_home": "dark green",
     "kit_away": "white",
     "population_millions": 129.0
   },
@@ -345,7 +345,7 @@
     "nickname_fan": "La Marea Roja",
     "nickname_local": "Los Canaleros / La Marea Roja",
     "fifa_ranking": 34,
-    "kit_home": "red/white",
+    "kit_home": "red",
     "kit_away": "blue",
     "population_millions": 4.4
   },
@@ -365,7 +365,7 @@
     "nickname_fan": null,
     "nickname_local": "Seleção das Quinas",
     "fifa_ranking": 5,
-    "kit_home": "red/green",
+    "kit_home": "red",
     "kit_away": "white",
     "population_millions": 10.4
   },
@@ -385,7 +385,7 @@
     "nickname_fan": null,
     "nickname_local": "Bafana Bafana",
     "fifa_ranking": 60,
-    "kit_home": "green/yellow",
+    "kit_home": "yellow/green",
     "kit_away": "white",
     "population_millions": 60.0
   },
@@ -415,7 +415,7 @@
     "nickname_fan": null,
     "nickname_local": "Nati / Schweizer Nati (German) / Rossocrociati (Italian)",
     "fifa_ranking": 19,
-    "kit_home": "red/white cross",
+    "kit_home": "red",
     "kit_away": "white",
     "population_millions": 8.8
   },
@@ -435,7 +435,7 @@
     "nickname_fan": null,
     "nickname_local": "نسور قرطاج (Nusur Qarthaj)",
     "fifa_ranking": 45,
-    "kit_home": "red/white",
+    "kit_home": "white/red",
     "kit_away": "white",
     "population_millions": 12.5
   },
@@ -445,7 +445,7 @@
     "nickname_fan": null,
     "nickname_local": "Ay-Yıldızlılar / Bizim Çocuklar",
     "fifa_ranking": 22,
-    "kit_home": "red/white",
+    "kit_home": "white/red",
     "kit_away": "white",
     "population_millions": 85.0
   },
@@ -465,7 +465,7 @@
     "nickname_fan": "The Stars and Stripes",
     "nickname_local": "USMNT / The Stars and Stripes",
     "fifa_ranking": 17,
-    "kit_home": "white/blue/red",
+    "kit_home": "red/white stripes",
     "kit_away": "blue",
     "population_millions": 335.0
   },
@@ -475,7 +475,7 @@
     "nickname_fan": null,
     "nickname_local": "Oq bo'rilar (Uzbek)",
     "fifa_ranking": 50,
-    "kit_home": "white",
+    "kit_home": "blue",
     "kit_away": "blue",
     "population_millions": 36.0
   }
