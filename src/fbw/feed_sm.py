@@ -356,6 +356,9 @@ class SMFeedEngine:
         self._emitted_fields: dict[str, set[str]] = {}  # source_id → enriched fields
         self._pending_corrections: list[str] = []
 
+        # Track SM internal events (direction announcements, etc.)
+        self._sm_events_seen: int = 0
+
         # Feed log
         self.log_path = log_path
         self._log_file = None
@@ -416,6 +419,24 @@ class SMFeedEngine:
 
         return lines
 
+    def _collect_sm_events(self):
+        """Pick up events generated internally by the state machine.
+
+        The SM appends events like direction_determined to self.events
+        during apply(), but apply() only returns the primary output.
+        We check for new entries after each apply() call.
+        """
+        new_events = self.sm.events[self._sm_events_seen:]
+        self._sm_events_seen = len(self.sm.events)
+        for ev in new_events:
+            now = time.time()
+            self._buffer.append(BufferedOutput(
+                output=ev,
+                raw_event_type=None,
+                buffered_at=now,
+                emit_after=now + self.delay if self.delay > 0 else 0,
+            ))
+
     def _enrich_raw(self, event_id: str, raw: dict) -> dict:
         if event_id in self._enrichment_cache:
             # Preserve original player IDs before enrichment overwrites them.
@@ -470,6 +491,11 @@ class SMFeedEngine:
                 if inp.minute.sort_value >= 0:
                     self._last_minute = max(self._last_minute, inp.minute.sort_value)
 
+        # Collect SM-generated events (direction, etc.) from full replay
+        sm_events = self.sm.events[self._sm_events_seen:]
+        self._sm_events_seen = len(self.sm.events)
+        outputs.extend(sm_events)
+
         # Verify score against canonical match data after replaying events
         score_corrections = self.verify_score()
 
@@ -519,6 +545,10 @@ class SMFeedEngine:
                             continue
 
                         result = self.sm.apply(inp)
+
+                        # Pick up SM-generated events (direction, etc.)
+                        self._collect_sm_events()
+
                         if result.kind == OutputKind.NOTHING:
                             continue
 
