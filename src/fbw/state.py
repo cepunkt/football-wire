@@ -467,9 +467,15 @@ class MatchStateMachine:
         )
 
     def _swap_direction(self) -> None:
-        """Swap play direction at half boundary."""
+        """Swap play direction at half boundary.
+
+        Clears evidence from the previous phase — old evidence would
+        look like contradictions against the swapped direction and
+        could trigger a false self-correction.
+        """
         if self.direction:
             self.direction = self.direction.swapped()
+            self._direction_evidence.clear()
 
     # --- Apply ---
 

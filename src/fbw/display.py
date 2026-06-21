@@ -380,15 +380,18 @@ def _format_free_kick(
         fk_team = sm.home
     fk_abbr = fk_team.abbreviation
 
-    # Distance from the goal the free kick team is attacking
+    # Euclidean distance to goal centre (not just depth)
+    # A wide free kick is further from goal than a central one
+    # at the same depth — this affects danger classification.
     fk_attacks_high = direction.attacks_high_x(fk_team.team_id, sm.home.team_id)
     if fk_attacks_high:
-        dist_to_goal = (100 - px) / 100 * PITCH_LENGTH_M
+        depth_m = (100 - px) / 100 * PITCH_LENGTH_M
     else:
-        dist_to_goal = px / 100 * PITCH_LENGTH_M
+        depth_m = px / 100 * PITCH_LENGTH_M
+    width_m = (py - 50) / 100 * PITCH_WIDTH_M
+    dist_to_goal = (depth_m ** 2 + width_m ** 2) ** 0.5
 
-    # Angle — how central is the position
-    # Y=50 is central, extremes are wide
+    # Centrality for danger classification (wide = crossing, central = shooting)
     centrality = abs(py - 50)
 
     # Danger classification
@@ -407,7 +410,7 @@ def _format_free_kick(
     else:
         danger = "deep, no immediate threat"
 
-    return f"{fk_abbr} | {dist_to_goal:.0f}m from goal — {danger}"
+    return f"{fk_abbr} | {dist_to_goal:.0f}m from goal centre — {danger}"
 
 
 def _position_suffix(
