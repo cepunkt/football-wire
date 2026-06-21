@@ -214,12 +214,13 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
     log("Initial fetch complete. Entering poll loop.")
     log("")
 
-    # ESPN polling setup (opt-in)
+    # ESPN polling setup (opt-in, per-match timers)
     espn_enabled = config.sources.espn
     espn_interval = config.sources.espn_interval
-    last_espn_poll = 0
+    last_espn_poll: dict[str, float] = {}  # per match_id
+    espn_post_match: dict[str, float] = {}  # match_id → finished_at (keep polling 30min)
     if espn_enabled:
-        log(f"ESPN stats polling enabled (every {espn_interval}s)")
+        log(f"ESPN stats polling enabled (every {espn_interval}s, per match)")
 
     # Main poll loop
     poll_count = 0
@@ -232,6 +233,32 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
         active_ids = [mid for mid in track_ids if mid not in finished]
 
         if not active_ids:
+            # Still doing post-match ESPN polling?
+            if espn_post_match:
+                # Clean up expired post-match trackers
+                now = time.time()
+                expired = [m for m, t in espn_post_match.items()
+                           if now - t >= 1800]
+                for m in expired:
+                    del espn_post_match[m]
+                    log(f"  ESPN: post-match polling ended for #{m}")
+
+                if espn_post_match:
+                    # Still collecting final stats, keep running
+                    for mid in list(espn_post_match.keys()):
+                        last_poll = last_espn_poll.get(mid, 0)
+                        if now - last_poll >= espn_interval:
+                            try:
+                                from .espn import poll_and_record
+                                info = tracked.get(mid, {})
+                                row = poll_and_record(mid, "?", "?", config)
+                                if row:
+                                    log(f"  ESPN: post-match stats for #{mid}")
+                                last_espn_poll[mid] = now
+                            except Exception as e:
+                                log(f"  ESPN post-match error: {e}")
+                    continue
+
             # Before stopping, check if new matches entered the window
             schedule = pull_schedule(config, log_fn=log)
             upcoming = get_trackable_matches(schedule)
@@ -276,22 +303,41 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
                 # Refresh schedule for updated standings
                 schedule = pull_schedule(config, log_fn=log)
 
-            # ESPN stats polling (for live matches only)
-            if espn_enabled and status == 3:
-                now = time.time()
-                if now - last_espn_poll >= espn_interval:
-                    try:
-                        from .espn import poll_and_record
-                        home_tla = _team_abbr(_get_team(live_data, "home"))
-                        away_tla = _team_abbr(_get_team(live_data, "away"))
-                        row = poll_and_record(mid, home_tla, away_tla, config)
-                        if row:
-                            poss_h = row.get("home_possession", "?")
-                            poss_a = row.get("away_possession", "?")
-                            log(f"  ESPN: {home_tla} {poss_h}% - {poss_a}% {away_tla}")
-                        last_espn_poll = now
-                    except Exception as e:
-                        log(f"  ESPN error: {e}")
+                # Keep polling ESPN for 30min after FT for final stats
+                if espn_enabled:
+                    espn_post_match[mid] = time.time()
+                    log(f"  ESPN: post-match polling for #{mid} (30min)")
+
+            # ESPN stats polling (per-match timer)
+            if espn_enabled:
+                should_poll_espn = False
+                if status == 3:
+                    # Live match — poll on interval
+                    should_poll_espn = True
+                elif mid in espn_post_match:
+                    # Post-match — keep polling for 30min
+                    if time.time() - espn_post_match[mid] < 1800:
+                        should_poll_espn = True
+                    else:
+                        del espn_post_match[mid]
+                        log(f"  ESPN: post-match polling ended for #{mid}")
+
+                if should_poll_espn:
+                    now = time.time()
+                    last_poll = last_espn_poll.get(mid, 0)
+                    if now - last_poll >= espn_interval:
+                        try:
+                            from .espn import poll_and_record
+                            home_tla = _team_abbr(_get_team(live_data, "home"))
+                            away_tla = _team_abbr(_get_team(live_data, "away"))
+                            row = poll_and_record(mid, home_tla, away_tla, config)
+                            if row:
+                                poss_h = row.get("home_possession", "?")
+                                poss_a = row.get("away_possession", "?")
+                                log(f"  ESPN: {home_tla} {poss_h}% - {poss_a}% {away_tla}")
+                            last_espn_poll[mid] = now
+                        except Exception as e:
+                            log(f"  ESPN error: {e}")
 
         update_live_state(tracked, config)
 

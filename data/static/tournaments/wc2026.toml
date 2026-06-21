@@ -37,12 +37,12 @@ penalties = true
 enabled = true
 # Hydration breaks are scheduled mid-half at the referee's discretion.
 # Not organic stoppages — scheduled advertising insertion points.
-# Observed ranges from live matches:
-#   1H: 23'-26' (ECU-CUW: 24', GER-CIV: ~30')
-#   2H: 63'-70' (GER-CIV: 71')
+# Observed ranges from live matches (3 matches):
+#   1H: GER-CIV ~30', ECU-CUW 24', TUN-JPN 24'
+#   2H: GER-CIV 71', ECU-CUW 68'
 # API uses inconsistent event types: DELAY (77) or PAUSE (83).
-typical_minutes_1h = [23, 26]
-typical_minutes_2h = [63, 70]
+typical_minutes_1h = [20, 30]
+typical_minutes_2h = [65, 75]
 
 [var]
 enabled = true
