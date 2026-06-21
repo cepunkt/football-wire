@@ -112,6 +112,7 @@ Returns `Event` array — the match event log.
 | 15 | Offside | no | IdPlayer sometimes null, enriched with player name later |
 | 16 | Corner | no | |
 | 18 | Foul | no | Position coordinates enriched 21-64s later |
+| 34 | Own Goal | no | IdPlayer = the defender. IdTeam = scoring (benefitting) team. |
 | 41 | Penalty Goal | no | |
 | 57 | Save | no | Sometimes appears without a preceding shot event |
 | 70 | Injury | no | |
