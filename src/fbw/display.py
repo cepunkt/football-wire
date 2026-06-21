@@ -319,10 +319,11 @@ def _format_event(
         return f"{time}--- {desc} ---"
 
     # --- Period changes ---
-    if event_type in ("start", "end"):
-        if event_type == "start":
+    action = data.get("action", "")
+    if event_type == "period" or action in ("start", "end"):
+        if action == "start":
             return f"{time}--- PERIOD              The referee signals the start. {score_str}"
-        else:
+        elif action == "end":
             return f"{time}--- PERIOD END          The referee brings the period to an end. {score_str}"
 
     # --- Coin toss (skip) ---
