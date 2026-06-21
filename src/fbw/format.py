@@ -61,31 +61,38 @@ def format_preamble(preamble_dir: Path | None = None, lean: bool = True) -> str:
 
 
 # --- Event markers ---
+# Loaded from locale strings, with hardcoded fallback
 
-EVENT_MARKERS = {
-    EventType.GOAL: ">>GOAL<<",
-    EventType.ASSIST: "ASSIST",
-    EventType.YELLOW: "YELLOW",
-    EventType.RED: "RED",
-    EventType.SECOND_YELLOW_RED: "2ND YELLOW/RED",
-    EventType.SUB: "SUB",
-    EventType.PENALTY_AWARDED: "!! PENALTY",
-    EventType.PERIOD_START: "--- PERIOD",
-    EventType.PERIOD_END: "--- PERIOD END",
-    EventType.SHOT: "SHOT",
-    EventType.OFFSIDE: "OFFSIDE",
-    EventType.CORNER: "CORNER",
-    EventType.FOUL: "FOUL",
-    EventType.PENALTY_GOAL: ">>GOAL<< (PEN)",
-    EventType.SAVE: "SAVE",
-    EventType.INJURY: "INJURY",
-    EventType.VAR: "** VAR",
-    EventType.DELAY: "DELAY",
-    EventType.RESUME: "RESUME",
-    EventType.COIN: "COIN",
-    EventType.COIN_SIDE: "COIN",
-    EventType.PAUSE: "PAUSE",
-}
+from .strings import S
+
+def _build_markers() -> dict:
+    """Build event markers from locale strings."""
+    return {
+        EventType.GOAL: S.marker("goal"),
+        EventType.ASSIST: S.marker("assist"),
+        EventType.YELLOW: S.marker("yellow"),
+        EventType.RED: S.marker("red"),
+        EventType.SECOND_YELLOW_RED: S.marker("second_yellow_red"),
+        EventType.SUB: S.marker("sub"),
+        EventType.PENALTY_AWARDED: S.marker("penalty_awarded"),
+        EventType.PERIOD_START: S.marker("period_start"),
+        EventType.PERIOD_END: S.marker("period_end"),
+        EventType.SHOT: S.marker("shot"),
+        EventType.OFFSIDE: S.marker("offside"),
+        EventType.CORNER: S.marker("corner"),
+        EventType.FOUL: S.marker("foul"),
+        EventType.PENALTY_GOAL: S.marker("goal"),
+        EventType.SAVE: S.marker("save"),
+        EventType.INJURY: "INJURY",
+        EventType.VAR: S.marker("var"),
+        EventType.DELAY: S.marker("break"),
+        EventType.RESUME: S.marker("resume"),
+        EventType.COIN: "COIN",
+        EventType.COIN_SIDE: "COIN",
+        EventType.PAUSE: S.marker("break"),
+    }
+
+EVENT_MARKERS = _build_markers()
 
 
 # --- Shot confidence ---
@@ -146,11 +153,21 @@ def format_event(event: Event, match: Match | None = None) -> str:
         if shot_parts:
             desc = f"{desc} | {' '.join(shot_parts)}"
 
-    # Position enrichment for fouls and offsides
+    # Position enrichment for fouls and offsides — pitch zone, not shot zone.
+    # Raw coordinates use a fixed system — we don't know which team attacks
+    # which way, so describe position neutrally.
     elif event.event_type in (EventType.FOUL, EventType.OFFSIDE):
         if event.shot_position:
-            sp = event.shot_position
-            desc = f"{desc} | at {sp.distance_m:.0f}m, {sp.zone}, {sp.side} ({sp.raw_x:.0f},{sp.raw_y:.0f})"
+            rx, ry = event.shot_position.raw_x, event.shot_position.raw_y
+            # Neutral pitch zone from raw X (0-100 lengthwise)
+            if 35 <= rx <= 65:
+                pitch_zone = "midfield"
+            elif rx < 20 or rx > 80:
+                pitch_zone = "near penalty area"
+            else:
+                pitch_zone = "between midfield and box"
+            side = "left" if ry < 35 else "right" if ry > 65 else "central"
+            desc = f"{desc} | {pitch_zone}, {side} ({rx:.0f},{ry:.0f})"
 
     # Sub enrichment
     if event.event_type == EventType.SUB and match:

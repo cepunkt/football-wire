@@ -195,15 +195,16 @@ class ShotPosition:
         in_six_yard_width = IN_SIX_YARD_Y[0] <= self.norm_y <= IN_SIX_YARD_Y[1]
         in_penalty_width = IN_PENALTY_Y[0] <= self.norm_y <= IN_PENALTY_Y[1]
 
+        from .strings import S
         if self.depth_m <= 5.5 and in_six_yard_width:
-            return "6-yard box"
+            return S.zone("six_yard")
         elif self.depth_m <= 16.5 and in_penalty_width:
-            return "inside box"
+            return S.zone("inside_box")
         elif self.depth_m <= 24:
-            return "edge of box"
+            return S.zone("edge")
         elif self.depth_m <= 35:
-            return "outside box"
-        return "long range"
+            return S.zone("outside")
+        return S.zone("long_range")
 
     @property
     def side(self) -> str:
