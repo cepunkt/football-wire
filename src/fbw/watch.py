@@ -55,6 +55,66 @@ def team_abbr(team: dict) -> str:
     return (team or {}).get("Abbreviation", "???")
 
 
+# --- Match argument resolution ---
+
+def resolve_match_arg(arg: str, config) -> str | None:
+    """Resolve a match argument to a match ID.
+
+    Accepts:
+      400021469         → match ID directly
+      #400021469        → match ID with # prefix (copy-paste)
+      GER-CIV           → find match between these teams
+      GER               → find most recent/next GER match
+    """
+    arg = arg.lstrip("#")
+
+    # Pure numeric — match ID
+    if arg.isdigit():
+        return arg
+
+    # Team code(s)
+    schedule = load_schedule(config)
+    if not schedule:
+        return None
+
+    parts = arg.upper().split("-")
+
+    if len(parts) == 2:
+        # HOME-AWAY pair
+        home_code, away_code = parts
+        for m in schedule:
+            h = team_abbr(m.get("HomeTeam") or m.get("Home") or {})
+            a = team_abbr(m.get("AwayTeam") or m.get("Away") or {})
+            if (h == home_code and a == away_code) or \
+               (h == away_code and a == home_code):
+                return m.get("IdMatch")
+    elif len(parts) == 1:
+        # Single team code — find most recent finished or next upcoming
+        code = parts[0]
+        team_matches = []
+        for m in schedule:
+            h = team_abbr(m.get("HomeTeam") or m.get("Home") or {})
+            a = team_abbr(m.get("AwayTeam") or m.get("Away") or {})
+            if code in (h, a):
+                team_matches.append(m)
+
+        if not team_matches:
+            return None
+
+        # Prefer most recent finished, then next upcoming
+        finished = [m for m in team_matches if m.get("MatchStatus") == 0]
+        if finished:
+            finished.sort(key=lambda m: m.get("Date", ""), reverse=True)
+            return finished[0].get("IdMatch")
+
+        upcoming = [m for m in team_matches if m.get("MatchStatus") != 0]
+        if upcoming:
+            upcoming.sort(key=lambda m: m.get("Date", ""))
+            return upcoming[0].get("IdMatch")
+
+    return None
+
+
 # --- Commands ---
 
 def cmd_now(config):
@@ -302,27 +362,38 @@ def main():
     args = parser.parse_args()
     config = init_config(args.config)
 
+    # Ape-friendly: strip # from match IDs (copy-paste from schedule output)
+    arg = args.arg.lstrip("#") if args.arg else args.arg
+
     if args.command == "now":
         cmd_now(config)
     elif args.command == "live":
         cmd_now(config)  # same view, shows live matches
     elif args.command in ("match", "summary"):
-        if not args.arg:
-            print("Usage: python -m fbw.watch match <match_id>")
+        if not arg:
+            print("Usage: python -m fbw.watch match <match_id or TEAM-TEAM>")
             return
-        cmd_match(config, args.arg)
+        mid = resolve_match_arg(arg, config)
+        if not mid:
+            print(f"No match found for '{arg}'")
+            return
+        cmd_match(config, mid)
     elif args.command == "group":
-        if not args.arg:
+        if not arg:
             print("Usage: python -m fbw.watch group <A-L or team code>")
             return
-        cmd_group(config, args.arg)
+        cmd_group(config, arg)
     elif args.command == "scorers":
         cmd_scorers(config)
     elif args.command == "watch":
-        if not args.arg:
-            print("Usage: python -m fbw.watch watch <match_id>")
+        if not arg:
+            print("Usage: python -m fbw.watch watch <match_id or TEAM-TEAM>")
             return
-        cmd_watch(config, args.arg)
+        mid = resolve_match_arg(arg, config)
+        if not mid:
+            print(f"No match found for '{arg}'")
+            return
+        cmd_watch(config, mid)
     else:
         cmd_now(config)
 
