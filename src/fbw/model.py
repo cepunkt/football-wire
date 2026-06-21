@@ -178,10 +178,26 @@ class ShotPosition:
 
     @property
     def zone(self) -> str:
-        """Depth zone name."""
-        if self.depth_m <= 5.5:
+        """Pitch zone based on depth AND width.
+
+        The 6-yard box and penalty area have width constraints —
+        a shot from the corner flag is near the goal line (low depth)
+        but outside any box (extreme width).
+
+        Width checks use normalised Y: 50 = central, 0/100 = touchlines.
+        6-yard box:    18.3m wide centred → norm_y ~36.5 to ~63.5
+        Penalty area:  40.3m wide centred → norm_y ~20.4 to ~79.6
+        """
+        # Width boundaries (normalised 0-100 scale)
+        IN_SIX_YARD_Y = (36.5, 63.5)
+        IN_PENALTY_Y = (20.4, 79.6)
+
+        in_six_yard_width = IN_SIX_YARD_Y[0] <= self.norm_y <= IN_SIX_YARD_Y[1]
+        in_penalty_width = IN_PENALTY_Y[0] <= self.norm_y <= IN_PENALTY_Y[1]
+
+        if self.depth_m <= 5.5 and in_six_yard_width:
             return "6-yard box"
-        elif self.depth_m <= 16.5:
+        elif self.depth_m <= 16.5 and in_penalty_width:
             return "inside box"
         elif self.depth_m <= 24:
             return "edge of box"

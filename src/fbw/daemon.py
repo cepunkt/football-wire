@@ -21,7 +21,7 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .config import init_config, get_config
@@ -125,9 +125,29 @@ def update_live_state(tracked: dict[str, dict], config) -> None:
 
 # --- Today's matches ---
 
-def get_todays_matches(schedule: list[dict]) -> list[dict]:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return [m for m in schedule if (m.get("Date") or "")[:10] == today]
+def get_trackable_matches(schedule: list[dict]) -> list[dict]:
+    """Get matches within a tracking window: 1 hour ago to 6 hours ahead.
+
+    Handles midnight UTC boundary — a match at 00:00 UTC is trackable
+    from 18:00 UTC the day before. American timezone tournaments commonly
+    have late evening kickoffs that cross the date boundary.
+    """
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(hours=1)
+    window_end = now + timedelta(hours=6)
+    results = []
+    for m in schedule:
+        date_str = m.get("Date") or ""
+        if not date_str:
+            continue
+        try:
+            # FIFA API dates: "2026-06-21T00:00:00Z"
+            match_dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            if window_start <= match_dt <= window_end:
+                results.append(m)
+        except (ValueError, TypeError):
+            continue
+    return results
 
 
 # --- Main daemon loop ---
@@ -150,10 +170,10 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
         track_ids = match_ids
         log(f"Tracking specific matches: {', '.join(track_ids)}")
     else:
-        today = get_todays_matches(schedule)
-        track_ids = [m.get("IdMatch") for m in today if m.get("IdMatch")]
-        log(f"Auto-tracking today's {len(track_ids)} matches")
-        for m in today:
+        upcoming = get_trackable_matches(schedule)
+        track_ids = [m.get("IdMatch") for m in upcoming if m.get("IdMatch")]
+        log(f"Auto-tracking {len(track_ids)} matches (1h ago to 6h ahead)")
+        for m in upcoming:
             mid = m.get("IdMatch", "?")
             label = _match_label(m)
             status = m.get("MatchStatus", 1)
@@ -212,7 +232,17 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
         active_ids = [mid for mid in track_ids if mid not in finished]
 
         if not active_ids:
-            log("All tracked matches finished. Daemon stopping.")
+            # Before stopping, check if new matches entered the window
+            schedule = pull_schedule(config, log_fn=log)
+            upcoming = get_trackable_matches(schedule)
+            new_ids = [m.get("IdMatch") for m in upcoming
+                       if m.get("IdMatch") and m.get("IdMatch") not in track_ids]
+            if new_ids:
+                for mid in new_ids:
+                    track_ids.append(mid)
+                log(f"New matches entered window: {', '.join(new_ids)}")
+                continue
+            log("All tracked matches finished, none upcoming. Daemon stopping.")
             break
 
         for mid in active_ids:
@@ -269,16 +299,14 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
         if poll_count % 50 == 0:
             schedule = pull_schedule(config, log_fn=log)
 
-            # Check for newly live matches (auto mode only)
+            # Check for newly trackable matches (auto mode only)
             if not match_ids:
-                today = get_todays_matches(schedule)
-                for m in today:
+                upcoming = get_trackable_matches(schedule)
+                for m in upcoming:
                     mid = m.get("IdMatch")
                     if mid and mid not in track_ids:
-                        status = m.get("MatchStatus", 1)
-                        if status == 3:
-                            track_ids.append(mid)
-                            log(f"New live match detected: #{mid} {_match_label(m)}")
+                        track_ids.append(mid)
+                        log(f"New match in window: #{mid} {_match_label(m)}")
 
     # Final state save
     update_live_state(tracked, config)

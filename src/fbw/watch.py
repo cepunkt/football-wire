@@ -169,6 +169,118 @@ def cmd_scorers(config):
         print(f"    {i:>2}. {info['goals']} - {name} ({info['team']})")
 
 
+def cmd_group(config, group_arg: str):
+    """Group standings from match data.
+
+    Accepts group letter (A-L) or team code (GER, CIV, etc.).
+    """
+    from .tournament import load_tournament_data
+    from pathlib import Path
+
+    td = load_tournament_data(Path("data/static/tournaments/wc2026-data"))
+
+    # Resolve: team code or group letter?
+    letter = group_arg.upper()
+    if len(letter) == 3:
+        # Team code — find its group
+        group = td.group_for_team(letter)
+        if not group:
+            print(f"Team '{letter}' not found")
+            return
+        letter = group.letter
+
+    group = td.groups.get(letter)
+    if not group:
+        print(f"Group '{letter}' not found (use A-L or team code)")
+        return
+
+    # Build standings from match data
+    standings = {}
+    for code in group.team_codes:
+        standings[code] = {"w": 0, "d": 0, "l": 0, "gf": 0, "ga": 0, "pts": 0}
+
+    matches_dir = config.paths.raw_matches_dir
+    results = []
+    schedule = load_schedule(config)
+
+    for m in schedule:
+        gn = m.get("GroupName")
+        if not gn:
+            continue
+        g_desc = gn[0].get("Description", "") if isinstance(gn, list) and gn else ""
+        if g_desc != f"Group {letter}":
+            continue
+
+        mid = m.get("IdMatch", "")
+        home_raw = m.get("HomeTeam") or m.get("Home") or {}
+        away_raw = m.get("AwayTeam") or m.get("Away") or {}
+        h_code = team_abbr(home_raw)
+        a_code = team_abbr(away_raw)
+
+        # Try to get score from match data
+        match_path = matches_dir / f"{mid}.json"
+        h_score = None
+        a_score = None
+        if match_path.exists():
+            md = read_raw_json(match_path)
+            if md:
+                ht = md.get("HomeTeam") or md.get("Home") or {}
+                at = md.get("AwayTeam") or md.get("Away") or {}
+                h_score = ht.get("Score")
+                a_score = at.get("Score")
+
+        if h_score is not None and a_score is not None:
+            results.append(f"  {h_code} {h_score}-{a_score} {a_code}  #{mid}")
+            # Update standings
+            if h_code in standings and a_code in standings:
+                standings[h_code]["gf"] += h_score
+                standings[h_code]["ga"] += a_score
+                standings[a_code]["gf"] += a_score
+                standings[a_code]["ga"] += h_score
+                if h_score > a_score:
+                    standings[h_code]["w"] += 1
+                    standings[h_code]["pts"] += 3
+                    standings[a_code]["l"] += 1
+                elif h_score < a_score:
+                    standings[a_code]["w"] += 1
+                    standings[a_code]["pts"] += 3
+                    standings[h_code]["l"] += 1
+                else:
+                    standings[h_code]["d"] += 1
+                    standings[h_code]["pts"] += 1
+                    standings[a_code]["d"] += 1
+                    standings[a_code]["pts"] += 1
+        else:
+            date_str = m.get("Date", "")
+            try:
+                dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                time_str = dt.strftime("%Y-%m-%d %H:%M UTC")
+            except (ValueError, TypeError):
+                time_str = "TBD"
+            results.append(f"  {h_code} vs {a_code}  [{time_str}]  #{mid}")
+
+    # Sort standings by pts, then GD, then GF
+    ranked = sorted(standings.items(),
+                    key=lambda x: (x[1]["pts"], x[1]["gf"] - x[1]["ga"], x[1]["gf"]),
+                    reverse=True)
+
+    print(f"\n  Group {letter}")
+    print(f"  {'Team':<5} {'P':>2} {'W':>2} {'D':>2} {'L':>2} {'GF':>3} {'GA':>3} {'GD':>4} {'Pts':>4}")
+    print(f"  {'-'*30}")
+    for code, s in ranked:
+        p = s["w"] + s["d"] + s["l"]
+        gd = s["gf"] - s["ga"]
+        gd_str = f"+{gd}" if gd > 0 else str(gd)
+        print(f"  {code:<5} {p:>2} {s['w']:>2} {s['d']:>2} {s['l']:>2} {s['gf']:>3} {s['ga']:>3} {gd_str:>4} {s['pts']:>4}")
+
+    print()
+    if results:
+        print("  Results:")
+        for r in results:
+            print(f"  {r}")
+    print()
+
+
 def cmd_watch(config, match_id: str):
     """Live event tail — uses feed module."""
     # Delegate to feed for live watching
@@ -181,9 +293,10 @@ def cmd_watch(config, match_id: str):
 def main():
     parser = argparse.ArgumentParser(description="football-wire terminal client")
     parser.add_argument("command", nargs="?", default="now",
-                        choices=["now", "live", "match", "summary", "scorers", "watch"],
+                        choices=["now", "live", "match", "summary", "group",
+                                 "scorers", "watch"],
                         help="Command (default: now)")
-    parser.add_argument("arg", nargs="?", help="Match ID or group letter")
+    parser.add_argument("arg", nargs="?", help="Match ID, group letter, or team code")
     parser.add_argument("--config", help="Path to config file")
 
     args = parser.parse_args()
@@ -191,11 +304,18 @@ def main():
 
     if args.command == "now":
         cmd_now(config)
+    elif args.command == "live":
+        cmd_now(config)  # same view, shows live matches
     elif args.command in ("match", "summary"):
         if not args.arg:
             print("Usage: python -m fbw.watch match <match_id>")
             return
         cmd_match(config, args.arg)
+    elif args.command == "group":
+        if not args.arg:
+            print("Usage: python -m fbw.watch group <A-L or team code>")
+            return
+        cmd_group(config, args.arg)
     elif args.command == "scorers":
         cmd_scorers(config)
     elif args.command == "watch":

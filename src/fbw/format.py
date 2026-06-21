@@ -22,21 +22,42 @@ from .model import (
 PREAMBLE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "static" / "preamble"
 
 
-def format_preamble(preamble_dir: Path | None = None) -> str:
-    """Load and concatenate all preamble files.
+def format_preamble(preamble_dir: Path | None = None, lean: bool = True) -> str:
+    """Load preamble for feed startup.
 
-    Reads all .md files from the preamble directory in sorted order.
-    Drop a file to remove a section, add one for new context.
+    lean=True (default): only data-notes.md inline, rest as file pointers.
+    lean=False: all preamble files concatenated inline (old behavior).
     """
     d = preamble_dir or PREAMBLE_DIR
     if not d.exists():
         return ""
+
+    if not lean:
+        # Old behavior — all files inline
+        parts = []
+        for f in sorted(d.glob("*.md")):
+            content = f.read_text().strip()
+            if content:
+                parts.append(content)
+        return "\n\n".join(parts)
+
+    # Lean: data notes inline, rest as pointers
     parts = []
-    for f in sorted(d.glob("*.md")):
-        content = f.read_text().strip()
-        if content:
-            parts.append(content)
-    return "\n\n".join(parts)
+    data_notes = d / "data-notes.md"
+    if data_notes.exists():
+        parts.append(data_notes.read_text().strip())
+
+    # File pointers for football and tournament context
+    pointers = []
+    for name, label in [("football-notes.md", "Football rules"),
+                        ("tournament.md", "Tournament info")]:
+        p = d / name
+        if p.exists():
+            pointers.append(f"  {label}: {p}")
+    if pointers:
+        parts.append("Read for context:\n" + "\n".join(pointers))
+
+    return "\n".join(parts)
 
 
 # --- Event markers ---
@@ -124,6 +145,12 @@ def format_event(event: Event, match: Match | None = None) -> str:
 
         if shot_parts:
             desc = f"{desc} | {' '.join(shot_parts)}"
+
+    # Position enrichment for fouls and offsides
+    elif event.event_type in (EventType.FOUL, EventType.OFFSIDE):
+        if event.shot_position:
+            sp = event.shot_position
+            desc = f"{desc} | at {sp.distance_m:.0f}m, {sp.zone}, {sp.side} ({sp.raw_x:.0f},{sp.raw_y:.0f})"
 
     # Sub enrichment
     if event.event_type == EventType.SUB and match:

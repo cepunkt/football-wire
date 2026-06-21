@@ -141,6 +141,11 @@ class FeedEngine:
         self._last_minute: float = -1.0
         self._last_stats_minute: float = 0.0
 
+        # Pending corrections for emitted events
+        self._pending_corrections: list[dict] = []
+        # Emitted event context for correction display
+        self._emitted_context: dict[str, dict] = {}
+
         # Feed log file (full history, no truncation)
         self.log_path = log_path
         self._log_file = None
@@ -184,6 +189,11 @@ class FeedEngine:
         """Apply any available enrichments to a raw event dict.
         Called before parsing — works for both catchup and live."""
         if event_id in self._enrichment_cache:
+            # Preserve original player IDs before enrichment overwrites them.
+            # The API reshuffles IdPlayer on sub events, corrupting the pair.
+            if "_orig_IdPlayer" not in raw:
+                raw["_orig_IdPlayer"] = raw.get("IdPlayer")
+                raw["_orig_IdSubPlayer"] = raw.get("IdSubPlayer")
             for field, value in self._enrichment_cache[event_id].items():
                 raw[field] = value
         return raw
@@ -263,6 +273,69 @@ class FeedEngine:
                 self.emit(format_event(ev, self.match))
 
         if events and self._last_minute > 0:
+            self._last_stats_minute = self._last_minute
+
+    def catchup_silent(self):
+        """Process all existing events for state tracking.
+
+        Silent on stdout (no Monitor output). But writes full enriched
+        history to the feed log file so "Match so far" pointer works.
+
+        Builds on_pitch set, dedup keys, stats, file positions —
+        everything the live cycle needs.
+        """
+        if not self.events_path.exists():
+            return
+
+        self.load_enrichment_cache()
+
+        raw_events = []
+        with open(self.events_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                    eid = raw.get("EventId", "")
+                    if eid:
+                        self._seen_event_ids.add(eid)
+                    raw_events.append(raw)
+                except json.JSONDecodeError:
+                    pass
+            self.events_pos = f.tell()
+
+        events = []
+        for raw in raw_events:
+            eid = raw.get("EventId", "")
+            if eid:
+                raw = self.enrich_raw(eid, raw)
+            ev = parse_event(raw, self.match)
+            dk = ev.dedup_key
+            if dk in self._seen_dedup_keys:
+                continue
+            self._seen_dedup_keys.add(dk)
+
+            if ev.event_type == EventType.SUB:
+                self.match.apply_sub(ev.on_player_id, ev.off_player_id)
+            if self.match.stats:
+                self.match.stats.update(ev)
+
+            if ev.minute.value >= 0:
+                self._last_minute = max(self._last_minute, ev.minute.value)
+            if ev.event_id:
+                self._emitted[ev.event_id] = set()
+            events.append(ev)
+
+        # Write enriched history to log file only (not stdout)
+        if self._log_file and events:
+            events.sort(key=lambda e: (e.minute.value, e.logged_at))
+            for ev in events:
+                line = format_event(ev, self.match)
+                self._log_file.write(line + "\n")
+            self._log_file.flush()
+
+        if self._last_minute > 0:
             self._last_stats_minute = self._last_minute
 
     # --- Cycle steps ---
@@ -365,8 +438,8 @@ class FeedEngine:
         except OSError:
             pass
 
-    # Pending corrections for emitted events
-    _pending_corrections: list[dict] = []
+    # _pending_corrections and _emitted_context are initialised in __init__
+    # (not here — class-level mutable defaults are shared across instances)
 
     def _apply_enrichment(self, eid: str, field: str, value):
         """Apply enrichment to buffer or queue correction for emitted events."""
@@ -382,6 +455,7 @@ class FeedEngine:
                 self._emitted[eid].add(field)
                 self._pending_corrections.append({
                     "event_id": eid, "field": field, "value": value,
+                    "context": self._emitted_context.get(eid, {}),
                 })
 
     def collect_corrections(self) -> list[str]:
@@ -433,8 +507,14 @@ class FeedEngine:
                             if px is not None and py is not None:
                                 from .model import ShotPosition
                                 sp = ShotPosition.from_raw(px, py)
+                                # Include event context for mapping
+                                ctx = c.get("context", {})
+                                prefix = ctx.get("formatted_prefix", "")
+                                # Extract minute and event info from prefix
+                                context_str = prefix.strip()[:50] if prefix else ""
                                 lines.append(
-                                    f"  >> ENRICHED: from {sp.distance_m:.0f}m, "
+                                    f"  >> ENRICHED: {context_str} "
+                                    f"| from {sp.distance_m:.0f}m, "
                                     f"{sp.zone}, {sp.side} ({px:.0f},{py:.0f})"
                                 )
                             # Don't emit individual X/Y separately
@@ -472,6 +552,22 @@ class FeedEngine:
                 self._last_minute = max(self._last_minute, mv)
             lines.append(formatted)
             self._emitted[eid] = applied
+            # Store context for correction display
+            buf = None
+            for r in ready:
+                if r[2] == eid:
+                    break
+            # Re-fetch event from buffer backup isn't available,
+            # so store from the formatted line
+            ev = None
+            for r_fmt, r_mv, r_eid, r_app in ready:
+                if r_eid == eid:
+                    break
+            # Simple context from the ready event
+            self._emitted_context[eid] = {
+                "minute_value": mv,
+                "formatted_prefix": formatted[:60] if formatted else "",
+            }
 
         return lines
 
@@ -505,10 +601,11 @@ class FeedEngine:
     def run_cycle(self, events_changed: bool, enrichments_changed: bool) -> None:
         """Run one complete cycle. Emit at most one notification."""
         # 1-2: Read new data if flagged
+        # Always check enrichments — watchdog may miss changes
+        # across container/host boundaries
         if events_changed:
             self.read_new_events()
-        if enrichments_changed:
-            self.read_new_enrichments()
+        self.read_new_enrichments()
 
         # 3b: Collect corrections for already-emitted events
         correction_lines = self.collect_corrections()
@@ -599,18 +696,43 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
             match.on_pitch.add(p.id)
         match.stats = MatchStats(match.home.abbreviation, match.away.abbreviation)
 
-    # Preamble + header (emit to both stdout and log)
+    # Preamble + lean header (no team profiles — use lore files)
     header_parts = []
     if config.display.preamble:
         header_parts.append(format_preamble())
     header_parts.append(format_match_header(match))
-    for team in [match.home, match.away]:
-        profile = load_team_profile(team.abbreviation)
-        if profile:
-            header_parts.append("")
-            header_parts.append(profile)
+
+    # Lore pointers instead of inline profiles
+    home_abbr = match.home.abbreviation
+    away_abbr = match.away.abbreviation
+    lore_dir = "data/static/tournaments/wc2026-lore"
+    header_parts.append("")
+    header_parts.append(f"Context (read for background):")
+    header_parts.append(f"  Team lore:    {lore_dir}/teams/{home_abbr}.md | {lore_dir}/teams/{away_abbr}.md")
+    header_parts.append(f"  Pre-match:    {lore_dir}/matches/{home_abbr}-{away_abbr}-pregame.md")
+    # Determine group from tournament data if available
+    try:
+        from .tournament import load_tournament_data
+        from pathlib import Path as _Path
+        td = load_tournament_data(_Path("data/static/tournaments/wc2026-data"))
+        group = td.group_for_team(home_abbr)
+        group_letter = group.letter if group else "?"
+    except Exception:
+        group_letter = "?"
+    header_parts.append(f"  Group:        {lore_dir}/groups/{group_letter}.md")
+
+    # If mid-match (events exist), point to feed history
+    if raw_events_path.exists():
+        header_parts.append(f"  Match so far: data/feeds/{match_id}.md")
+
     header_text = "\n".join(header_parts)
     print(header_text)
+
+    # Feed log (full output, no truncation)
+    log_dir = config.paths.data_dir / "feeds"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{match_id}.md"
+
     # Write header to log file too
     if log_path:
         with open(log_path, "w") as lf:
@@ -622,11 +744,6 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
         while not raw_events_path.exists():
             time.sleep(2)
 
-    # Feed log (full output, no truncation)
-    log_dir = config.paths.data_dir / "feeds"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"{match_id}.md"
-
     # Engine
     engine = FeedEngine(
         raw_events_path, raw_enrichments_path, match,
@@ -635,8 +752,9 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
         log_path=log_path,
     )
 
-    # Catchup
-    engine.catchup()
+    # Catchup — silently process events to build state, but don't emit
+    # The feed log file and lore pointers handle history
+    engine.catchup_silent()
     print("-- live --")
 
     # Watchdog (flag-only)
@@ -682,6 +800,181 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
 
 # --- Main ---
 
+def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
+    """Watch a match using the state machine engine."""
+    from .feed_sm import SMFeedEngine, FileChangeFlag as SMFileChangeFlag, format_output
+    from .state import MatchStateMachine, TeamState
+    from .tournament import load_tournament, load_tournament_data
+    from .process import read_raw_json
+    from pathlib import Path
+
+    raw_match_path = config.paths.raw_matches_dir / f"{match_id}.json"
+    raw_events_path = config.paths.raw_events_dir / f"{match_id}.jsonl"
+    raw_enrichments_path = config.paths.raw_enrichments_dir / f"{match_id}.jsonl"
+
+    # Load match data
+    raw_match = read_raw_json(raw_match_path)
+    if raw_match is None:
+        print(f"No data for #{match_id}")
+        sys.exit(1)
+
+    # Load tournament rules + data
+    tournament_dir = Path("data/static/tournaments")
+    rules = load_tournament(tournament_dir / "wc2026.toml")
+    tournament_data = load_tournament_data(tournament_dir / "wc2026-data")
+
+    # Extract team info from match data
+    home_raw = raw_match.get("HomeTeam") or raw_match.get("Home") or {}
+    away_raw = raw_match.get("AwayTeam") or raw_match.get("Away") or {}
+
+    home_id = str(home_raw.get("IdTeam", ""))
+    away_id = str(away_raw.get("IdTeam", ""))
+    home_abbr = home_raw.get("Abbreviation", "???")
+    away_abbr = away_raw.get("Abbreviation", "???")
+
+    # Build on_pitch from starters
+    home_starters = set()
+    away_starters = set()
+    for p in (home_raw.get("Players") or []):
+        if p.get("Status") == 1:  # starter
+            home_starters.add(str(p.get("IdPlayer", "")))
+    for p in (away_raw.get("Players") or []):
+        if p.get("Status") == 1:
+            away_starters.add(str(p.get("IdPlayer", "")))
+
+    home_state = TeamState(
+        team_id=home_id,
+        abbreviation=home_abbr,
+        on_pitch=home_starters,
+    )
+    away_state = TeamState(
+        team_id=away_id,
+        abbreviation=away_abbr,
+        on_pitch=away_starters,
+    )
+
+    # Determine if knockout from stage name
+    stage_name = ""
+    sn = raw_match.get("StageName")
+    if sn and isinstance(sn, list) and sn:
+        stage_name = sn[0].get("Description", "")
+    is_knockout = stage_name != "" and stage_name != "First Stage"
+
+    # Create state machine
+    sm = MatchStateMachine(
+        match_id=match_id,
+        home=home_state,
+        away=away_state,
+        rules=rules,
+        is_knockout=is_knockout,
+    )
+
+    # Build player name lookup
+    from .feed_sm import init_player_names
+    init_player_names(raw_match)
+
+    # Preamble + lean header
+    header_parts = []
+    if config.display.preamble:
+        header_parts.append(format_preamble())
+
+    home_score = home_raw.get("Score", 0) or 0
+    away_score = away_raw.get("Score", 0) or 0
+    header_parts.append(f"{home_abbr} {home_score} - {away_score} {away_abbr} (# {match_id})")
+
+    # Lineup (one line per team)
+    for side, raw_team in [("home", home_raw), ("away", away_raw)]:
+        abbr = raw_team.get("Abbreviation", "???")
+        tactics = raw_team.get("Tactics", "?")
+        starters = []
+        for p in sorted((raw_team.get("Players") or []),
+                        key=lambda x: x.get("ShirtNumber", 99)):
+            if p.get("Status") == 1:
+                def _get_name(field):
+                    v = p.get(field, [])
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        return v[0].get("Description", "")
+                    return str(v) if v else ""
+                name = _get_name("ShortName") or _get_name("PlayerName") or "?"
+                starters.append(name)
+        header_parts.append(f"{abbr} ({tactics}): {', '.join(starters)}")
+
+    # Lore pointers
+    lore_dir = Path("data/static/tournaments/wc2026-lore")
+    header_parts.append("")
+    header_parts.append(f"Lore: {lore_dir}/teams/{{{home_abbr},{away_abbr}}}.md")
+
+    header_text = "\n".join(header_parts)
+    print(header_text)
+
+    # Feed log
+    log_dir = config.paths.data_dir / "feeds"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{match_id}.sm.md"
+
+    with open(log_path, "w") as lf:
+        lf.write(header_text + "\n")
+
+    # Wait for events
+    if not raw_events_path.exists():
+        print(f"Waiting for events on #{match_id}...")
+        while not raw_events_path.exists():
+            time.sleep(2)
+
+    # Engine
+    engine = SMFeedEngine(
+        sm=sm,
+        events_path=raw_events_path,
+        enrichments_path=raw_enrichments_path,
+        match_data=raw_match,
+        delay=delay,
+        cycle_interval=cycle_interval,
+        stats_interval=config.display.stats_interval,
+        log_path=log_path,
+    )
+
+    # Catchup
+    engine.catchup()
+    print("-- live (state machine) --")
+
+    # Watchdog
+    watcher = SMFileChangeFlag(
+        raw_events_path.name,
+        raw_enrichments_path.name,
+    )
+    observer = Observer()
+    observer.schedule(watcher, str(config.paths.raw_events_dir), recursive=False)
+    observer.schedule(watcher, str(config.paths.raw_enrichments_dir), recursive=False)
+    observer.start()
+
+    try:
+        while True:
+            time.sleep(cycle_interval)
+            changed = watcher.consume()
+            ev_changed = raw_events_path.name in changed
+            en_changed = raw_enrichments_path.name in changed
+            engine.run_cycle(ev_changed, en_changed)
+
+            # Check for full time
+            live = read_live(config)
+            info = live.get("matches", {}).get(match_id)
+            if info and info.get("status") == 0:
+                time.sleep(2)
+                engine.read_new_events()
+                engine.read_new_enrichments()
+                engine.flush_all()
+                score = sm.score
+                print(f"FULL TIME: {home_abbr} {score[0]}-{score[1]} {away_abbr} (#{match_id})")
+                break
+
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        engine.flush_all()
+        observer.stop()
+        observer.join(timeout=3)
+
+
 def main():
     parser = argparse.ArgumentParser(description="football-wire LM feed")
     parser.add_argument("match_id", nargs="?", help="Match ID to watch")
@@ -689,6 +982,8 @@ def main():
     parser.add_argument("--delay", type=int, help="Delay seconds (enrichment + TV sync)")
     parser.add_argument("--cycle", type=int, help="Cycle interval seconds (default 10)")
     parser.add_argument("--snapshot", action="store_true", help="One-shot status")
+    parser.add_argument("--sm", action="store_true",
+                        help="Use state machine engine (experimental)")
 
     args = parser.parse_args()
     config = init_config(args.config)
@@ -708,7 +1003,10 @@ def main():
             sys.exit(1)
         print(f"Auto-detected: #{match_id}")
 
-    cmd_watch(config, match_id, delay=delay, cycle_interval=cycle)
+    if args.sm:
+        cmd_watch_sm(config, match_id, delay=delay, cycle_interval=cycle)
+    else:
+        cmd_watch(config, match_id, delay=delay, cycle_interval=cycle)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,65 @@
+# FIFA World Cup 2026 — Tournament Rules
+# These are competition-specific rules that vary between tournaments.
+# The sport invariants (pitch size, 11v11, two halves) live in football.py.
+#
+# To support a different tournament, copy this file and adjust.
+
+[tournament]
+name = "FIFA World Cup 2026"
+short_name = "WC2026"
+hosts = ["USA", "Mexico", "Canada"]
+teams = 48
+start_date = "2026-06-11"
+end_date = "2026-07-19"
+
+[substitutions]
+max_subs = 5
+max_windows = 3          # not counting half-time
+# Half-time is always a free sub window (football invariant).
+# Concussion subs are additional and don't count toward the limit.
+concussion_sub = true
+
+[format.group_stage]
+groups = 12
+teams_per_group = 4
+matches_per_team = 3
+advance_top = 2           # top 2 per group qualify
+advance_third = 8         # best 8 third-placed teams qualify
+extra_time = false
+penalties = false
+
+[format.knockout]
+extra_time = true
+extra_time_subs = 1       # additional sub allowed in extra time
+penalties = true
+
+[hydration]
+enabled = true
+# Hydration breaks are scheduled mid-half at the referee's discretion.
+# Not organic stoppages — scheduled advertising insertion points.
+# Observed ranges from live matches:
+#   1H: 23'-26' (ECU-CUW: 24', GER-CIV: ~30')
+#   2H: 63'-70' (GER-CIV: 71')
+# API uses inconsistent event types: DELAY (77) or PAUSE (83).
+typical_minutes_1h = [23, 26]
+typical_minutes_2h = [63, 70]
+
+[var]
+enabled = true
+# VAR can review: goals, penalties, red cards, mistaken identity
+reviewable = ["goal", "penalty", "red_card", "mistaken_identity"]
+
+[discipline]
+yellow_accumulation_reset = "quarter_final"
+# Players accumulate yellows across matches. Two yellows = one match ban.
+# Accumulation resets at the quarter-final stage.
+yellows_for_ban = 2
+
+[sources.fifa]
+# FIFA API identifiers for this tournament
+competition_id = "17"
+season_id = "285023"
+
+[sources.espn]
+# ESPN league identifier
+league = "fifa.world"
