@@ -878,7 +878,25 @@ class MatchStateMachine:
         )
 
     def _apply_set_piece(self, inp: StateInput) -> StateOutput:
-        """Handle corners, free kicks, penalties awarded."""
+        """Handle corners, free kicks, penalties awarded.
+
+        Corners are definitive direction evidence — the corner flag
+        is always at the attacking end. One corner = direction committed.
+        """
+        # Corner as direction evidence
+        raw_x = inp.data.get("position_x")
+        team_id = inp.data.get("team_id", "")
+        if inp.data.get("type") == "corner" and raw_x is not None:
+            rx = float(raw_x)
+            # Corner flags are at X~0 or X~100 — definitive
+            if rx > 90 or rx < 10:
+                direction_output = self._record_direction_evidence(
+                    team_id=team_id, raw_x=rx,
+                    event_type="corner", minute=inp.minute,
+                )
+                if direction_output:
+                    self.side_outputs.append(direction_output)
+
         return StateOutput(
             kind=OutputKind.EVENT,
             minute=inp.minute,
