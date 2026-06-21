@@ -462,11 +462,10 @@ def cmd_group(config, group_arg: str):
     print()
 
 
-def cmd_watch(config, match_id: str):
-    """Live event tail — uses feed module."""
-    # Delegate to feed for live watching
-    from .feed import cmd_watch as feed_watch
-    feed_watch(config, match_id, delay=0)
+def cmd_watch(config, match_id: str, delay: int = 0):
+    """Live event tail — uses state machine feed."""
+    from .feed import cmd_watch_sm
+    cmd_watch_sm(config, match_id, delay=delay)
 
 
 # --- Main ---
@@ -503,8 +502,8 @@ def main():
         if not mid:
             print(f"No match found for '{arg}'")
             return
-        from .feed import cmd_watch as feed_watch
-        feed_watch(config, mid, delay=args.delay)
+        from .feed import cmd_watch_sm
+        cmd_watch_sm(config, mid, delay=args.delay or 0)
 
 
 if __name__ == "__main__":
