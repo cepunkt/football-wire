@@ -233,9 +233,8 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
         active_ids = [mid for mid in track_ids if mid not in finished]
 
         if not active_ids:
-            # Still doing post-match ESPN polling?
+            # Post-match ESPN polling
             if espn_post_match:
-                # Clean up expired post-match trackers
                 now = time.time()
                 expired = [m for m, t in espn_post_match.items()
                            if now - t >= 1800]
@@ -243,24 +242,28 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
                     del espn_post_match[m]
                     log(f"  ESPN: post-match polling ended for #{m}")
 
-                if espn_post_match:
-                    # Still collecting final stats, keep running
-                    for mid in list(espn_post_match.keys()):
-                        last_poll = last_espn_poll.get(mid, 0)
-                        if now - last_poll >= espn_interval:
-                            try:
-                                from .espn import poll_and_record
-                                info = tracked.get(mid, {})
-                                row = poll_and_record(mid, "?", "?", config)
-                                if row:
-                                    log(f"  ESPN: post-match stats for #{mid}")
-                                last_espn_poll[mid] = now
-                            except Exception as e:
-                                log(f"  ESPN post-match error: {e}")
-                    continue
+                for mid in list(espn_post_match.keys()):
+                    last_poll = last_espn_poll.get(mid, 0)
+                    if now - last_poll >= espn_interval:
+                        try:
+                            from .espn import poll_and_record
+                            row = poll_and_record(mid, "?", "?", config)
+                            if row:
+                                log(f"  ESPN: post-match stats for #{mid}")
+                            last_espn_poll[mid] = now
+                        except Exception as e:
+                            log(f"  ESPN post-match error: {e}")
 
-            # Before stopping, check if new matches entered the window
+            # Check for new matches in the window
+            # Refresh schedule every idle cycle (not just every 50 polls)
             schedule = pull_schedule(config, log_fn=log)
+            # Rebuild stage_ids from refreshed schedule
+            for m in schedule:
+                mid = m.get("IdMatch", "")
+                sid = m.get("IdStage", "")
+                if mid and sid:
+                    stage_ids[mid] = sid
+
             upcoming = get_trackable_matches(schedule)
             new_ids = [m.get("IdMatch") for m in upcoming
                        if m.get("IdMatch") and m.get("IdMatch") not in track_ids]
@@ -268,9 +271,13 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
                 for mid in new_ids:
                     track_ids.append(mid)
                 log(f"New matches entered window: {', '.join(new_ids)}")
-                continue
-            log("All tracked matches finished, none upcoming. Daemon stopping.")
-            break
+            else:
+                # Nothing active, nothing upcoming — idle
+                # Sleep longer to avoid hammering the schedule API
+                if poll_count % 30 == 0:
+                    log("Idle — no active or upcoming matches. Waiting...")
+                time.sleep(max(interval, 60) - interval)  # at least 60s idle cycle
+            continue
 
         for mid in active_ids:
             if not _running:
