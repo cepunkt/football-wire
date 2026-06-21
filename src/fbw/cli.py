@@ -204,6 +204,12 @@ def main():
     query_p.add_argument("query_args", nargs=argparse.REMAINDER,
                          help="Passed to query tool")
 
+    # ingest — paste stats from FIFA page
+    ingest_p = sub.add_parser("ingest", help="Paste FIFA stats from clipboard")
+    ingest_p.add_argument("match_id", help="Match ID")
+    ingest_p.add_argument("--period", default="FT",
+                          help="Period label: 1H, FT, ET (default: FT)")
+
     args = parser.parse_args()
 
     if args.config:
@@ -220,6 +226,9 @@ def main():
         # Re-parse with query's own parser
         sys.argv = ["fbw query"] + (args.query_args or [])
         query_main()
+    elif args.command == "ingest":
+        from .ingest import ingest_interactive
+        ingest_interactive(args.match_id, period=args.period)
     else:
         parser.print_help()
 

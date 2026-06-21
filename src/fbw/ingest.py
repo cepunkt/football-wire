@@ -154,8 +154,12 @@ def _parse_num(val: str) -> int | float | None:
 
 
 def store_match_stats(match_id: str, stats: dict,
-                      config=None) -> Path:
-    """Store parsed match stats to aggregate layer."""
+                      period: str = "FT", config=None) -> Path:
+    """Store parsed match stats to aggregate layer.
+
+    Stats are keyed by period (1H, FT, etc.) so half-time and
+    full-time stats coexist in one file.
+    """
     if config is None:
         config = get_config()
 
@@ -163,17 +167,89 @@ def store_match_stats(match_id: str, stats: dict,
     agg_dir.mkdir(parents=True, exist_ok=True)
 
     path = agg_dir / f"{match_id}.json"
+
+    # Load existing data or create new
+    existing = {}
+    if path.exists():
+        try:
+            with open(path) as f:
+                existing = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if "periods" not in existing:
+        # Migrate flat format to period-keyed
+        if "stats" in existing:
+            existing = {
+                "match_id": match_id,
+                "periods": {"FT": existing},
+            }
+        else:
+            existing = {"match_id": match_id, "periods": {}}
+
+    existing["match_id"] = match_id
+    existing["periods"][period] = stats
+
     with open(path, "w") as f:
-        json.dump(stats, f, indent=2, ensure_ascii=False)
+        json.dump(existing, f, indent=2, ensure_ascii=False)
 
     return path
 
 
-def ingest_stats_clipboard(match_id: str, text: str, config=None) -> Path:
+def ingest_stats_clipboard(match_id: str, text: str,
+                           period: str = "FT", config=None) -> Path:
     """Parse and store clipboard-pasted FIFA stats for a match.
 
     One-stop function: parse the paste, store to aggregate/.
     """
     stats = parse_fifa_stats(text)
     stats["match_id"] = match_id
-    return store_match_stats(match_id, stats, config)
+    stats["period"] = period
+    return store_match_stats(match_id, stats, period=period, config=config)
+
+
+def ingest_interactive(match_id: str, period: str = "FT",
+                       config=None) -> Path | None:
+    """Interactive stats ingestion — read from stdin.
+
+    Reads until EOF (Ctrl-D) or a blank line after content.
+    """
+    import sys
+
+    print(f"Paste FIFA stats for #{match_id} ({period}).")
+    print("End with Ctrl-D or two blank lines.")
+    print("---")
+
+    lines = []
+    blank_count = 0
+    try:
+        for line in sys.stdin:
+            if line.strip() == "":
+                blank_count += 1
+                if blank_count >= 2 and lines:
+                    break
+                lines.append(line)
+            else:
+                blank_count = 0
+                lines.append(line)
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+    text = "".join(lines).strip()
+    if not text:
+        print("No input received.")
+        return None
+
+    try:
+        path = ingest_stats_clipboard(match_id, text, period=period,
+                                      config=config)
+        stats = parse_fifa_stats(text)
+        possession = stats.get("stats", {}).get("Attacking.Possession", {})
+        home_poss = possession.get("home", "?")
+        away_poss = possession.get("away", "?")
+        print(f"Stored {period} stats → {path}")
+        print(f"  Possession: {home_poss}% - {away_poss}%")
+        return path
+    except ValueError as e:
+        print(f"Parse error: {e}")
+        return None
