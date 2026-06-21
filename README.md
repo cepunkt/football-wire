@@ -1,5 +1,7 @@
 # football-wire
 
+<img src="assets/banner_sm.png" alt="football-wire" width="720">
+
 Live football match data pipeline. Bridges public API data into structured event feeds for LLM companions, terminal clients, and data analysis.
 
 Built during the FIFA World Cup 2026 to watch matches with an AI companion when friends are asleep and the tournament is in the wrong timezone.
