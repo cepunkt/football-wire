@@ -1,0 +1,70 @@
+# football-wire display strings — English
+# These are fbw enrichment strings, NOT API strings.
+# The original API descriptions are passed through untouched.
+# These strings are used for markers, zone names, and position
+# descriptions that fbw adds on top of the raw data.
+
+locale: en
+
+# Event markers (fbw-generated, not API text)
+markers:
+  goal: ">>GOAL<<"
+  assist: "ASSIST"
+  yellow: "YELLOW"
+  red: "RED"
+  second_yellow_red: "2ND YELLOW/RED"
+  sub: "SUB"
+  penalty_awarded: "!! PENALTY"
+  period_start: "--- PERIOD"
+  period_end: "--- PERIOD END"
+  shot: "SHOT"
+  shot_on_target: "SHOT (on target)"
+  shot_off_target: "SHOT (off target)"
+  offside: "OFFSIDE"
+  corner: "CORNER"
+  foul: "FOUL"
+  save: "SAVE"
+  var: "** VAR"
+  break: "BREAK"
+  resume: "RESUME"
+
+# Shot zones (attacker's perspective)
+zones:
+  six_yard: "6-yard box"
+  inside_box: "inside box"
+  edge: "edge of box"
+  outside: "outside box"
+  long_range: "long range"
+
+# Pitch zones (neutral, no direction assumed)
+pitch_zones:
+  near_box: "near penalty area"
+  between: "between midfield and box"
+  midfield: "midfield"
+
+# Side (attacker's perspective for shots, neutral for fouls)
+sides:
+  left: "left"
+  central: "central"
+  right: "right"
+
+# Goal placement
+placement:
+  height:
+    low: "low"
+    mid: "mid-height"
+    high: "high"
+  side:
+    left: "left"
+    centre: "centre"
+    right: "right"
+
+# Enrichment format templates
+# {var} placeholders filled by format layer
+formats:
+  shot_position: "from {distance}m, {zone}, {side} ({raw_x},{raw_y})"
+  shot_placement: "placed {height}, {side} ({raw_x},{raw_y})"
+  foul_position: "{pitch_zone}, {side} ({raw_x},{raw_y})"
+  sub: "ON: {on}, OFF: {off}"
+  break_scheduled: "Scheduled mid-half break"
+  break_resumed: "Match resumed after break"

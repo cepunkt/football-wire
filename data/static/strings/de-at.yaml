@@ -1,0 +1,60 @@
+# football-wire display strings — Austrian German
+# Oida, des san unsare Strings.
+
+locale: de-at
+
+markers:
+  goal: ">>TOR!<<"
+  assist: "VORLAGE"
+  yellow: "GELB"
+  red: "ROT"
+  second_yellow_red: "GELB-ROT"
+  sub: "WECHSEL"
+  penalty_awarded: "!! ELFMETER"
+  period_start: "--- ANPFIFF"
+  period_end: "--- HALBZEIT"
+  shot: "SCHUSS"
+  shot_on_target: "SCHUSS (aufs Tor)"
+  shot_off_target: "SCHUSS (daneben)"
+  offside: "ABSEITS"
+  corner: "ECKE"
+  foul: "FOUL"
+  save: "PARADE"
+  var: "** VAR"
+  break: "WERBEPAUSE"
+  resume: "WEITER"
+
+zones:
+  six_yard: "Fünfmeterraum"
+  inside_box: "Strafraum"
+  edge: "Strafraumkante"
+  outside: "außerhalb"
+  long_range: "Distanz"
+
+pitch_zones:
+  near_box: "vor dem Strafraum"
+  between: "zwischen Mittelfeld und Strafraum"
+  midfield: "Mittelfeld"
+
+sides:
+  left: "links"
+  central: "zentral"
+  right: "rechts"
+
+placement:
+  height:
+    low: "flach"
+    mid: "halbhoch"
+    high: "hoch"
+  side:
+    left: "links"
+    centre: "Mitte"
+    right: "rechts"
+
+formats:
+  shot_position: "aus {distance}m, {zone}, {side} ({raw_x},{raw_y})"
+  shot_placement: "{height}, {side} ({raw_x},{raw_y})"
+  foul_position: "{pitch_zone}, {side} ({raw_x},{raw_y})"
+  sub: "REIN: {on}, RAUS: {off}"
+  break_scheduled: "Geplante Werbepause"
+  break_resumed: "Weiter geht's"
