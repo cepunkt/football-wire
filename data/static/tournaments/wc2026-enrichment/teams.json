@@ -1,0 +1,338 @@
+{
+  "ALG": {
+    "flag": "🇩🇿",
+    "nickname": "Les Fennecs",
+    "nickname_fan": null,
+    "nickname_local": "الثعالب (Al-Tha'alib) / Les Fennecs",
+    "fifa_ranking": 28
+  },
+  "ARG": {
+    "flag": "🇦🇷",
+    "nickname": "La Albiceleste",
+    "nickname_fan": null,
+    "nickname_local": "La Albiceleste / La Selección",
+    "fifa_ranking": 1
+  },
+  "AUS": {
+    "flag": "🇦🇺",
+    "nickname": "Socceroos",
+    "nickname_fan": null,
+    "nickname_local": "Socceroos",
+    "fifa_ranking": 27
+  },
+  "AUT": {
+    "flag": "🇦🇹",
+    "nickname": "Das Team",
+    "nickname_fan": null,
+    "nickname_local": "Das Team / Das Nationalteam",
+    "fifa_ranking": 24
+  },
+  "BEL": {
+    "flag": "🇧🇪",
+    "nickname": "De Rode Duivels",
+    "nickname_fan": "The Red Devils",
+    "nickname_local": "De Rode Duivels (Dutch) / Les Diables Rouges (French) / Die Roten Teufel (German)",
+    "fifa_ranking": 9
+  },
+  "BIH": {
+    "flag": "🇧🇦",
+    "nickname": "Zmajevi",
+    "nickname_fan": null,
+    "nickname_local": "Zmajevi (Dragons) / Zlatni Ljiljani (Golden Lilies)",
+    "fifa_ranking": 64
+  },
+  "BRA": {
+    "flag": "🇧🇷",
+    "nickname": "Seleção",
+    "nickname_fan": "Canarinho",
+    "nickname_local": "Seleção / Canarinho / Canarinhos",
+    "fifa_ranking": 6
+  },
+  "CAN": {
+    "flag": "🇨🇦",
+    "nickname": "Les Rouges",
+    "nickname_fan": null,
+    "nickname_local": "Les Rouges (French) / The Reds (English)",
+    "fifa_ranking": 30
+  },
+  "CIV": {
+    "flag": "🇨🇮",
+    "nickname": "Les Éléphants",
+    "nickname_fan": null,
+    "nickname_local": "Les Éléphants",
+    "fifa_ranking": 33
+  },
+  "COD": {
+    "flag": "🇨🇩",
+    "nickname": "Les Léopards",
+    "nickname_fan": null,
+    "nickname_local": "Les Léopards",
+    "fifa_ranking": 46
+  },
+  "COL": {
+    "flag": "🇨🇴",
+    "nickname": "Los Cafeteros",
+    "nickname_fan": null,
+    "nickname_local": "Los Cafeteros / La Tricolor",
+    "fifa_ranking": 13
+  },
+  "CPV": {
+    "flag": "🇨🇻",
+    "nickname": "Tubarões Azuis",
+    "nickname_fan": null,
+    "nickname_local": "Tubarões Azuis (Portuguese)",
+    "fifa_ranking": 67
+  },
+  "CRO": {
+    "flag": "🇭🇷",
+    "nickname": "Vatreni",
+    "nickname_fan": "Kockasti",
+    "nickname_local": "Vatreni / Kockasti",
+    "fifa_ranking": 11
+  },
+  "CUW": {
+    "flag": "🇨🇼",
+    "nickname": "The Blue Wave",
+    "nickname_fan": null,
+    "nickname_local": "De Blauwe Golf (Papiamentu/Dutch)",
+    "fifa_ranking": 82
+  },
+  "CZE": {
+    "flag": "🇨🇿",
+    "nickname": "Nároďák",
+    "nickname_fan": "Repre",
+    "nickname_local": "Nároďák / Repre",
+    "fifa_ranking": 40
+  },
+  "ECU": {
+    "flag": "🇪🇨",
+    "nickname": "La Tri",
+    "nickname_fan": null,
+    "nickname_local": "La Tri / La Tricolor",
+    "fifa_ranking": 23
+  },
+  "EGY": {
+    "flag": "🇪🇬",
+    "nickname": "The Pharaohs",
+    "nickname_fan": null,
+    "nickname_local": "الفراعنة (Al-Faraaena)",
+    "fifa_ranking": 29
+  },
+  "ENG": {
+    "flag": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+    "nickname": "The Three Lions",
+    "nickname_fan": null,
+    "nickname_local": "The Three Lions",
+    "fifa_ranking": 4
+  },
+  "ESP": {
+    "flag": "🇪🇸",
+    "nickname": "La Roja",
+    "nickname_fan": "La Furia Roja",
+    "nickname_local": "La Roja / La Furia Roja",
+    "fifa_ranking": 2
+  },
+  "FRA": {
+    "flag": "🇫🇷",
+    "nickname": "Les Bleus",
+    "nickname_fan": null,
+    "nickname_local": "Les Bleus",
+    "fifa_ranking": 3
+  },
+  "GER": {
+    "flag": "🇩🇪",
+    "nickname": "Die Mannschaft",
+    "nickname_fan": null,
+    "nickname_local": "Die Mannschaft / DFB-Team",
+    "fifa_ranking": 10
+  },
+  "GHA": {
+    "flag": "🇬🇭",
+    "nickname": "Black Stars",
+    "nickname_fan": null,
+    "nickname_local": "Black Stars",
+    "fifa_ranking": 73
+  },
+  "HAI": {
+    "flag": "🇭🇹",
+    "nickname": "Les Grenadiers",
+    "nickname_fan": null,
+    "nickname_local": "Les Grenadiers / Les Bicolores / Le Rouge et Bleu",
+    "fifa_ranking": 83
+  },
+  "IRN": {
+    "flag": "🇮🇷",
+    "nickname": "Team Melli",
+    "nickname_fan": null,
+    "nickname_local": "تیم ملی (Team Melli)",
+    "fifa_ranking": 20
+  },
+  "IRQ": {
+    "flag": "🇮🇶",
+    "nickname": "Lions of Mesopotamia",
+    "nickname_fan": null,
+    "nickname_local": "أُسُودُ الرَّافِدَيْن (Usood al-Rafidayn)",
+    "fifa_ranking": 57
+  },
+  "JOR": {
+    "flag": "🇯🇴",
+    "nickname": "Al-Nashama",
+    "nickname_fan": null,
+    "nickname_local": "النشامى (Al-Nashama)",
+    "fifa_ranking": 63
+  },
+  "JPN": {
+    "flag": "🇯🇵",
+    "nickname": "Samurai Blue",
+    "nickname_fan": null,
+    "nickname_local": "サムライブルー (Samurai Burū)",
+    "fifa_ranking": 18
+  },
+  "KOR": {
+    "flag": "🇰🇷",
+    "nickname": "Taegeuk Warriors",
+    "nickname_fan": "The Reds",
+    "nickname_local": "Taegeukjeonsa (태극전사)",
+    "fifa_ranking": 25
+  },
+  "KSA": {
+    "flag": "🇸🇦",
+    "nickname": "Al-Suquor Al-Khodhur",
+    "nickname_fan": "The Green Falcons",
+    "nickname_local": "الصقور الخضراء (Al-Suqur Al-Khadra)",
+    "fifa_ranking": 61
+  },
+  "MAR": {
+    "flag": "🇲🇦",
+    "nickname": "Atlas Lions",
+    "nickname_fan": null,
+    "nickname_local": "Les Lions de l'Atlas (French) / أسود الأطلس (Arabic)",
+    "fifa_ranking": 7
+  },
+  "MEX": {
+    "flag": "🇲🇽",
+    "nickname": "El Tri",
+    "nickname_fan": null,
+    "nickname_local": "El Tri / El Tricolor",
+    "fifa_ranking": 14
+  },
+  "NED": {
+    "flag": "🇳🇱",
+    "nickname": "Oranje",
+    "nickname_fan": null,
+    "nickname_local": "Oranje / De Oranje",
+    "fifa_ranking": 8
+  },
+  "NOR": {
+    "flag": "🇳🇴",
+    "nickname": "Landslaget",
+    "nickname_fan": null,
+    "nickname_local": "Landslaget",
+    "fifa_ranking": 31
+  },
+  "NZL": {
+    "flag": "🇳🇿",
+    "nickname": "All Whites",
+    "nickname_fan": null,
+    "nickname_local": "All Whites",
+    "fifa_ranking": 85
+  },
+  "PAN": {
+    "flag": "🇵🇦",
+    "nickname": "Los Canaleros",
+    "nickname_fan": "La Marea Roja",
+    "nickname_local": "Los Canaleros / La Marea Roja",
+    "fifa_ranking": 34
+  },
+  "PAR": {
+    "flag": "🇵🇾",
+    "nickname": "La Albirroja",
+    "nickname_fan": "Los Guaraníes",
+    "nickname_local": "La Albirroja / Los Guaraníes",
+    "fifa_ranking": 41
+  },
+  "POR": {
+    "flag": "🇵🇹",
+    "nickname": "Seleção das Quinas",
+    "nickname_fan": null,
+    "nickname_local": "Seleção das Quinas",
+    "fifa_ranking": 5
+  },
+  "QAT": {
+    "flag": "🇶🇦",
+    "nickname": "Al Annabi",
+    "nickname_fan": null,
+    "nickname_local": "العنابي (Al Annabi)",
+    "fifa_ranking": 56
+  },
+  "RSA": {
+    "flag": "🇿🇦",
+    "nickname": "Bafana Bafana",
+    "nickname_fan": null,
+    "nickname_local": "Bafana Bafana",
+    "fifa_ranking": 60
+  },
+  "SCO": {
+    "flag": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    "nickname": null,
+    "nickname_fan": null,
+    "nickname_local": null,
+    "fifa_ranking": 42
+  },
+  "SEN": {
+    "flag": "🇸🇳",
+    "nickname": "Lions de la Téranga",
+    "nickname_fan": null,
+    "nickname_local": "Lions de la Téranga",
+    "fifa_ranking": 15
+  },
+  "SUI": {
+    "flag": "🇨🇭",
+    "nickname": "Nati",
+    "nickname_fan": null,
+    "nickname_local": "Nati / Schweizer Nati (German) / Rossocrociati (Italian)",
+    "fifa_ranking": 19
+  },
+  "SWE": {
+    "flag": "🇸🇪",
+    "nickname": "Blågult",
+    "nickname_fan": null,
+    "nickname_local": "Blågult / Tre Kronor (football context)",
+    "fifa_ranking": 38
+  },
+  "TUN": {
+    "flag": "🇹🇳",
+    "nickname": "Eagles of Carthage",
+    "nickname_fan": null,
+    "nickname_local": "نسور قرطاج (Nusur Qarthaj)",
+    "fifa_ranking": 45
+  },
+  "TUR": {
+    "flag": "🇹🇷",
+    "nickname": "Ay-Yıldızlılar",
+    "nickname_fan": null,
+    "nickname_local": "Ay-Yıldızlılar / Bizim Çocuklar",
+    "fifa_ranking": 22
+  },
+  "URU": {
+    "flag": "🇺🇾",
+    "nickname": "La Celeste",
+    "nickname_fan": null,
+    "nickname_local": "La Celeste",
+    "fifa_ranking": 16
+  },
+  "USA": {
+    "flag": "🇺🇸",
+    "nickname": "USMNT",
+    "nickname_fan": "The Stars and Stripes",
+    "nickname_local": "USMNT / The Stars and Stripes",
+    "fifa_ranking": 17
+  },
+  "UZB": {
+    "flag": "🇺🇿",
+    "nickname": "White Wolves",
+    "nickname_fan": null,
+    "nickname_local": "Oq bo'rilar (Uzbek)",
+    "fifa_ranking": 50
+  }
+}
