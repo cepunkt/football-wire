@@ -29,11 +29,3 @@ football-wire uses open data from the following sources:
   possession) that the FIFA API does not expose in its free tier.
   Non-commercial, low-frequency use. See docs/espn-endpoint.md.
 
-## The Fjelstul World Cup Database
-- **Repository:** https://github.com/jfjelstul/worldcup
-- **Author:** Joshua C. Fjelstul, Ph.D.
-- **Copyright:** (c) 2023 Joshua C. Fjelstul, Ph.D.
-- **License:** CC-BY-SA 4.0
-- **Data:** Historical World Cup data 1930-2022
-- **Note:** Not bundled in this repository. Download separately from the source.
-  ShareAlike license requires derivative works to carry CC-BY-SA 4.0.
