@@ -326,15 +326,18 @@ def _format_event(
         elif action == "end":
             return f"{time}--- PERIOD END          The referee brings the period to an end. {score_str}"
 
-    # --- Coin toss (skip) ---
+    # --- Coin toss ---
     if event_type in ("coin_toss", "coin_side"):
-        return None
+        desc = data.get("description", "")
+        if desc:
+            return f"{time}COIN                    {desc} {score_str}"
 
-    # --- Fallback ---
+    # --- Fallback — never silently drop events ---
     desc = data.get("description", "")
     if desc:
         return f"{time}{desc} {score_str}"
-    return None
+    # Last resort: show what we have so nothing is invisible
+    return f"{time}[{event_type or 'UNK'}]                 {score_str}"
 
 
 def _position_suffix(
