@@ -425,6 +425,27 @@ class TestPlayDirection:
                              {"action": "start", "phase": "ET2"}))
         assert sm.direction.home_end == AttackEnd.LOW_X
 
+    def test_uncommitted_evidence_cleared_at_swap(self, rules):
+        """Pre-half evidence is cleared at swap even if direction not committed."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        # One shot in 1H — not enough to commit
+        sm.apply(self._shot_input("10'", "home_id", 88.0))
+        assert sm.direction is None
+        assert len(sm._direction_evidence) == 1
+
+        # Half-time + 2H start — evidence should be cleared
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "45'", {"action": "end"}))
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "46'", {"action": "start"}))
+        assert len(sm._direction_evidence) == 0
+
+        # 2H shots should commit without 1H contamination
+        sm.apply(self._shot_input("50'", "home_id", 10.0))
+        sm.apply(self._shot_input("55'", "home_id", 8.0))
+        # Home shoots toward LOW_X in 2H (swapped from 1H HIGH_X)
+        assert sm.direction is not None
+        assert sm.direction.home_end == AttackEnd.LOW_X
+
     def test_saves_dont_contribute_evidence(self, rules):
         """Saves should not be used for direction inference."""
         sm = _make_sm(rules)

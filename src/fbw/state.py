@@ -332,7 +332,8 @@ class MatchStateMachine:
     ) -> StateOutput | None:
         """Record a directional observation and try to commit or correct.
 
-        Evidence sources: shots, corners, offsides, penalties.
+        Evidence sources: shots, corners, offsides (when coordinates
+        are available — often enrichment-dependent, not inline).
         Keeps recording after commit for self-correction.
 
         Correction logic: if the opposite end accumulates more evidence
@@ -450,13 +451,13 @@ class MatchStateMachine:
     def _swap_direction(self) -> None:
         """Swap play direction at half boundary.
 
-        Clears evidence from the previous phase — old evidence would
-        look like contradictions against the swapped direction and
-        could trigger a false self-correction.
+        Always clears evidence — even if direction wasn't committed,
+        old phase evidence would be wrong for the new phase. Evidence
+        is phase-local.
         """
+        self._direction_evidence.clear()
         if self.direction:
             self.direction = self.direction.swapped()
-            self._direction_evidence.clear()
 
     # --- Apply ---
 
@@ -930,8 +931,10 @@ class MatchStateMachine:
     def _apply_set_piece(self, inp: StateInput) -> StateOutput:
         """Handle corners, free kicks, penalties awarded.
 
-        Corners are definitive direction evidence — the corner flag
-        is always at the attacking end. One corner = direction committed.
+        Corners with coordinates are direction evidence — the corner
+        flag is at the attacking end. Coordinates are enrichment-
+        dependent (not always inline). Requires 2 normalised
+        observations to commit, same as shots.
         """
         # Corner as direction evidence
         raw_x = inp.data.get("position_x")
