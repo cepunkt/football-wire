@@ -115,7 +115,129 @@ def resolve_match_arg(arg: str, config) -> str | None:
     return None
 
 
+# --- Tournament data helpers ---
+
+def _get_tournament_data():
+    """Load canonical tournament data."""
+    from .tournament import load_tournament_data
+    return load_tournament_data(Path("data/static/tournaments/wc2026-data"))
+
+
 # --- Commands ---
+
+def cmd_groups(config):
+    """All group standings at a glance."""
+    td = _get_tournament_data()
+    schedule = load_schedule(config)
+    matches_dir = config.paths.raw_matches_dir
+
+    for letter in sorted(td.groups.keys()):
+        group = td.groups[letter]
+        standings = {}
+        for code in group.team_codes:
+            standings[code] = {"w": 0, "d": 0, "l": 0, "gf": 0, "ga": 0, "pts": 0}
+
+        # Accumulate results
+        for m in schedule:
+            gn = m.get("GroupName")
+            if not gn:
+                continue
+            g_desc = gn[0].get("Description", "") if isinstance(gn, list) and gn else ""
+            if g_desc != f"Group {letter}":
+                continue
+
+            mid = m.get("IdMatch", "")
+            match_path = matches_dir / f"{mid}.json"
+            if not match_path.exists():
+                continue
+
+            md = read_raw_json(match_path)
+            if not md:
+                continue
+
+            ht = md.get("HomeTeam") or md.get("Home") or {}
+            at = md.get("AwayTeam") or md.get("Away") or {}
+            h_code = team_abbr(ht)
+            a_code = team_abbr(at)
+            h_score = ht.get("Score")
+            a_score = at.get("Score")
+
+            if h_score is None or a_score is None:
+                continue
+            if h_code not in standings or a_code not in standings:
+                continue
+
+            standings[h_code]["gf"] += h_score
+            standings[h_code]["ga"] += a_score
+            standings[a_code]["gf"] += a_score
+            standings[a_code]["ga"] += h_score
+            if h_score > a_score:
+                standings[h_code]["w"] += 1
+                standings[h_code]["pts"] += 3
+                standings[a_code]["l"] += 1
+            elif h_score < a_score:
+                standings[a_code]["w"] += 1
+                standings[a_code]["pts"] += 3
+                standings[h_code]["l"] += 1
+            else:
+                standings[h_code]["d"] += 1
+                standings[h_code]["pts"] += 1
+                standings[a_code]["d"] += 1
+                standings[a_code]["pts"] += 1
+
+        ranked = sorted(standings.items(),
+                        key=lambda x: (x[1]["pts"], x[1]["gf"] - x[1]["ga"], x[1]["gf"]),
+                        reverse=True)
+
+        # Compact one-line-per-group format
+        teams_str = "  ".join(
+            f"{code} {s['pts']}p" for code, s in ranked
+        )
+        print(f"  Group {letter}:  {teams_str}")
+
+    print()
+
+
+def cmd_squad(config, arg: str):
+    """Show team squad with positions and shirt numbers."""
+    td = _get_tournament_data()
+    code = arg.upper().lstrip("#")
+
+    team = td.team(code)
+    if not team:
+        print(f"Team '{code}' not found")
+        return
+
+    print(f"\n  {team.name} ({team.code}) — Group {team.group}")
+    print(f"  {team.confederation} | {team.continent}")
+    print()
+
+    # Group by position
+    positions = {"GK": [], "DF": [], "MF": [], "FW": []}
+    for p in team.squad:
+        pos = p.position if p.position in positions else "??"
+        if pos in positions:
+            positions[pos].append(p)
+
+    for pos_name, pos_label in [("GK", "Goalkeepers"), ("DF", "Defenders"),
+                                 ("MF", "Midfielders"), ("FW", "Forwards")]:
+        players = sorted(positions.get(pos_name, []), key=lambda p: p.number)
+        if players:
+            print(f"  {pos_label}:")
+            for p in players:
+                club_str = f" — {p.club}" if p.club else ""
+                age_str = ""
+                if p.date_of_birth:
+                    try:
+                        from datetime import date
+                        dob = date.fromisoformat(p.date_of_birth)
+                        age = (date.today() - dob).days // 365
+                        age_str = f", {age}y"
+                    except (ValueError, TypeError):
+                        pass
+                print(f"    #{p.number:<3} {p.name}{age_str}{club_str}")
+            print()
+
 
 def cmd_now(config):
     """Rolling schedule — last 6 finished + next 6 upcoming."""
@@ -354,7 +476,7 @@ def main():
     parser = argparse.ArgumentParser(description="football-wire terminal client")
     parser.add_argument("command", nargs="?", default="now",
                         choices=["now", "live", "match", "summary", "group",
-                                 "scorers", "watch"],
+                                 "groups", "squad", "scorers", "watch"],
                         help="Command (default: now)")
     parser.add_argument("arg", nargs="?", help="Match ID, group letter, or team code")
     parser.add_argument("--config", help="Path to config file")
@@ -383,6 +505,13 @@ def main():
             print("Usage: python -m fbw.watch group <A-L or team code>")
             return
         cmd_group(config, arg)
+    elif args.command == "groups":
+        cmd_groups(config)
+    elif args.command == "squad":
+        if not arg:
+            print("Usage: python -m fbw.watch squad <team code>")
+            return
+        cmd_squad(config, arg)
     elif args.command == "scorers":
         cmd_scorers(config)
     elif args.command == "watch":
