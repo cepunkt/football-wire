@@ -75,10 +75,45 @@ class PathsConfig:
 
 
 @dataclass
+class EspnConfig:
+    """ESPN stats source configuration."""
+    enabled: bool = False
+    base_url: str = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+    league: str = "fifa.world"
+    poll_interval: int = 60
+
+
+@dataclass
 class SourcesConfig:
-    """Optional data source toggles."""
-    espn: bool = False          # opt-in ESPN stats polling
-    espn_interval: int = 60     # ESPN poll interval in seconds
+    """Optional data source toggles (legacy — prefer EspnConfig)."""
+    espn: bool = False          # kept for backward compat with old local configs
+    espn_interval: int = 60
+
+
+@dataclass
+class TournamentConfig:
+    """Which tournament data to load."""
+    name: str = "wc2026"
+    rules: str = "wc2026.toml"
+    data_dir: str = "wc2026-data"
+    lore_dir: str = "wc2026-lore"
+
+    @property
+    def base_path(self) -> Path:
+        """Tournament base directory under data/static/tournaments/."""
+        return Path("data/static/tournaments")
+
+    @property
+    def rules_path(self) -> Path:
+        return self.base_path / self.rules
+
+    @property
+    def data_path(self) -> Path:
+        return self.base_path / self.data_dir
+
+    @property
+    def lore_path(self) -> Path:
+        return self.base_path / self.lore_dir
 
 
 @dataclass
@@ -94,7 +129,9 @@ class Config:
     """Top-level application configuration."""
     paths: PathsConfig = field(default_factory=PathsConfig)
     source: SourceConfig = field(default_factory=SourceConfig)
-    sources: SourcesConfig = field(default_factory=SourcesConfig)
+    espn: EspnConfig = field(default_factory=EspnConfig)
+    sources: SourcesConfig = field(default_factory=SourcesConfig)  # legacy compat
+    tournament: TournamentConfig = field(default_factory=TournamentConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
 
 
@@ -159,12 +196,29 @@ def _apply_toml(config: Config, data: dict) -> None:
             if key in source_data:
                 setattr(config.source, key, source_data[key])
 
-    # [sources]
+    # [source.espn]
+    espn_data = data.get("source", {}).get("espn", {})
+    if espn_data:
+        for key in ("enabled", "base_url", "league", "poll_interval"):
+            if key in espn_data:
+                setattr(config.espn, key, espn_data[key])
+
+    # [sources] — legacy compat
     if "sources" in data:
         sources = data["sources"]
-        for key in ("espn", "espn_interval"):
-            if key in sources:
-                setattr(config.sources, key, sources[key])
+        if "espn" in sources:
+            config.sources.espn = sources["espn"]
+            config.espn.enabled = sources["espn"]  # sync to new config
+        if "espn_interval" in sources:
+            config.sources.espn_interval = sources["espn_interval"]
+            config.espn.poll_interval = sources["espn_interval"]
+
+    # [tournament]
+    if "tournament" in data:
+        tourn = data["tournament"]
+        for key in ("name", "rules", "data_dir", "lore_dir"):
+            if key in tourn:
+                setattr(config.tournament, key, tourn[key])
 
     # [display]
     if "display" in data:

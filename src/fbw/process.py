@@ -52,16 +52,7 @@ def read_raw_events(filepath: Path) -> list[dict]:
 
 # --- Localization helper ---
 
-def get_localized(name_list, fallback: str = "?") -> str:
-    """Extract en-GB or first available description from localized list."""
-    if not name_list:
-        return fallback
-    for entry in name_list:
-        if isinstance(entry, dict) and entry.get("Locale") in ("en-GB", "en"):
-            return entry.get("Description", fallback)
-    if isinstance(name_list[0], dict):
-        return name_list[0].get("Description", fallback)
-    return str(name_list[0])
+from .model import get_localized  # noqa: F401 — re-export for existing callers
 
 
 # --- Parsing: structural data (high trust) ---

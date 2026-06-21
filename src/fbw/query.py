@@ -27,7 +27,8 @@ from .config import init_config, get_config
 
 def _get_tournament_data():
     from .tournament import load_tournament_data
-    return load_tournament_data(Path("data/static/tournaments/wc2026-data"))
+    config = get_config()
+    return load_tournament_data(config.tournament.data_path)
 
 
 def _load_schedule(config):

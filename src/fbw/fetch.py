@@ -77,15 +77,7 @@ def _read_json(filepath: Path) -> dict | None:
 
 # --- Localization helper ---
 
-def _get_name(name_list) -> str:
-    if not name_list:
-        return "?"
-    for entry in name_list:
-        if isinstance(entry, dict) and entry.get("Locale") in ("en-GB", "en"):
-            return entry.get("Description", "?")
-    if isinstance(name_list[0], dict):
-        return name_list[0].get("Description", "?")
-    return str(name_list[0])
+from .model import get_localized as _get_name
 
 
 # --- API calls ---

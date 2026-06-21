@@ -1,0 +1,13 @@
+# Personal overrides (copy to fbw.config.local.toml — gitignored)
+#
+# Only set values you want to override. Everything else comes from
+# fbw.config.toml defaults.
+
+# [paths]
+# venv = "/path/to/your/venv"     # or ".venv" for a local virtualenv
+
+# [source.espn]
+# enabled = true                  # enable live possession stats
+
+# [display]
+# delay = 30                      # lower delay for faster enrichment

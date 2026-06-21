@@ -120,7 +120,9 @@ def resolve_match_arg(arg: str, config) -> str | None:
 def _get_tournament_data():
     """Load canonical tournament data."""
     from .tournament import load_tournament_data
-    return load_tournament_data(Path("data/static/tournaments/wc2026-data"))
+    from .config import get_config
+    config = get_config()
+    return load_tournament_data(config.tournament.data_path)
 
 
 # --- Commands ---
@@ -356,10 +358,7 @@ def cmd_group(config, group_arg: str):
 
     Accepts group letter (A-L) or team code (GER, CIV, etc.).
     """
-    from .tournament import load_tournament_data
-    from pathlib import Path
-
-    td = load_tournament_data(Path("data/static/tournaments/wc2026-data"))
+    td = _get_tournament_data()
 
     # Resolve: team code or group letter?
     letter = group_arg.upper()

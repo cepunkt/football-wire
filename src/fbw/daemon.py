@@ -55,15 +55,7 @@ def log(msg: str) -> None:
 
 # --- Live state tracking ---
 
-def _get_localized(name_list) -> str:
-    if not name_list:
-        return "?"
-    for entry in name_list:
-        if isinstance(entry, dict) and entry.get("Locale") in ("en-GB", "en"):
-            return entry.get("Description", "?")
-    if isinstance(name_list[0], dict):
-        return name_list[0].get("Description", "?")
-    return str(name_list[0])
+from .model import get_localized as _get_localized
 
 
 def _team_abbr(team: dict) -> str:

@@ -705,7 +705,7 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
     # Lore pointers instead of inline profiles
     home_abbr = match.home.abbreviation
     away_abbr = match.away.abbreviation
-    lore_dir = "data/static/tournaments/wc2026-lore"
+    lore_dir = str(config.tournament.lore_path)
     header_parts.append("")
     header_parts.append(f"Context (read for background):")
     header_parts.append(f"  Team lore:    {lore_dir}/teams/{home_abbr}.md | {lore_dir}/teams/{away_abbr}.md")
@@ -713,8 +713,7 @@ def cmd_watch(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
     # Determine group from tournament data if available
     try:
         from .tournament import load_tournament_data
-        from pathlib import Path as _Path
-        td = load_tournament_data(_Path("data/static/tournaments/wc2026-data"))
+        td = load_tournament_data(config.tournament.data_path)
         group = td.group_for_team(home_abbr)
         group_letter = group.letter if group else "?"
     except Exception:
@@ -819,9 +818,8 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
         sys.exit(1)
 
     # Load tournament rules + data
-    tournament_dir = Path("data/static/tournaments")
-    rules = load_tournament(tournament_dir / "wc2026.toml")
-    tournament_data = load_tournament_data(tournament_dir / "wc2026-data")
+    rules = load_tournament(config.tournament.rules_path)
+    tournament_data = load_tournament_data(config.tournament.data_path)
 
     # Extract team info from match data
     home_raw = raw_match.get("HomeTeam") or raw_match.get("Home") or {}
@@ -900,7 +898,7 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
         header_parts.append(f"{abbr} ({tactics}): {', '.join(starters)}")
 
     # Lore pointers
-    lore_dir = Path("data/static/tournaments/wc2026-lore")
+    lore_dir = config.tournament.lore_path
     header_parts.append("")
     header_parts.append(f"Lore: {lore_dir}/teams/{{{home_abbr},{away_abbr}}}.md")
 

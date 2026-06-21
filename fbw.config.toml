@@ -4,18 +4,35 @@
 #   2. FBW_CONFIG env var
 #   3. ./fbw.config.toml (this file)
 #   4. ~/.config/fbw/config.toml
+#
+# Personal overrides: create fbw.config.local.toml (gitignored)
+# See fbw.config.local.example.toml for reference.
 
 [paths]
 data_dir = "data"
 # venv = ".venv"             # path to Python venv (leave empty for system Python)
 
+[tournament]
+name = "wc2026"              # tournament directory name under data/static/tournaments/
+rules = "wc2026.toml"        # tournament rules file
+data_dir = "wc2026-data"     # canonical tournament data (worldcup.json format)
+lore_dir = "wc2026-lore"     # narrative lore layer (team/group/match context)
+
 [source.fifa]
+# Required. FIFA public API — no auth needed, but requires browser User-Agent.
 base_url = "https://api.fifa.com/api/v3"
 competition_id = "17"
 season_id = "285023"
 stage_id = "289273"
 poll_interval = 10
-trust = "low"
+
+[source.espn]
+# Optional. Unauthenticated ESPN endpoint provides live possession and stats.
+# Enable in local config: espn = true
+enabled = false
+base_url = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+league = "fifa.world"
+poll_interval = 60
 
 [display]
 delay = 90          # anti-spoiler delay in seconds (0 = disabled)

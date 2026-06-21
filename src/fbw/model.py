@@ -15,6 +15,25 @@ from enum import IntEnum, Enum
 from typing import ClassVar
 
 
+# --- FIFA API localization ---
+
+def get_localized(name_list, fallback: str = "?") -> str:
+    """Extract en-GB or first available description from FIFA API localized list.
+
+    The FIFA API returns localized strings as:
+      [{"Locale": "en-GB", "Description": "..."}, ...]
+    This extracts the English description, falling back to first available.
+    """
+    if not name_list:
+        return fallback
+    for entry in name_list:
+        if isinstance(entry, dict) and entry.get("Locale") in ("en-GB", "en"):
+            return entry.get("Description", fallback)
+    if isinstance(name_list[0], dict):
+        return name_list[0].get("Description", fallback)
+    return str(name_list[0])
+
+
 # --- Trust levels ---
 
 class Trust(Enum):
