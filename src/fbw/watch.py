@@ -474,60 +474,38 @@ def cmd_watch(config, match_id: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="football-wire terminal client",
-        epilog="For lookups (groups, squads, players): python -m fbw query",
+        description="football-wire watch — schedule and live feed",
+        epilog="For lookups (groups, squads, players): python -m fbw query\n\n"
+               "Examples:\n"
+               "  fbw watch                # schedule\n"
+               "  fbw watch #400021475     # live feed for match\n"
+               "  fbw watch TUN-JPN        # live feed by team codes\n"
+               "  fbw watch TUN            # live feed, latest TUN match\n",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("command", nargs="?", default="now",
-                        choices=["now", "live", "match", "summary", "group",
-                                 "groups", "squad", "scorers", "watch"],
-                        help="Command (default: now)")
-    parser.add_argument("arg", nargs="?", help="Match ID, group letter, or team code")
+    parser.add_argument("arg", nargs="?",
+                        help="Match ID (#ID), team code (GER), or pair (GER-CIV). "
+                             "Omit for schedule.")
     parser.add_argument("--config", help="Path to config file")
+    parser.add_argument("--delay", type=int, default=0,
+                        help="Anti-spoiler delay in seconds (default: 0)")
 
     args = parser.parse_args()
     config = init_config(args.config)
 
-    # Ape-friendly: strip # from match IDs (copy-paste from schedule output)
-    arg = args.arg.lstrip("#") if args.arg else args.arg
+    arg = args.arg.lstrip("#") if args.arg else None
 
-    if args.command == "now":
+    if not arg:
+        # No argument — show schedule
         cmd_now(config)
-    elif args.command == "live":
-        cmd_now(config)  # same view, shows live matches
-    elif args.command in ("match", "summary"):
-        if not arg:
-            print("Usage: python -m fbw.watch match <match_id or TEAM-TEAM>")
-            return
-        mid = resolve_match_arg(arg, config)
-        if not mid:
-            print(f"No match found for '{arg}'")
-            return
-        cmd_match(config, mid)
-    elif args.command == "group":
-        if not arg:
-            print("Usage: python -m fbw.watch group <A-L or team code>")
-            return
-        cmd_group(config, arg)
-    elif args.command == "groups":
-        cmd_groups(config)
-    elif args.command == "squad":
-        if not arg:
-            print("Usage: python -m fbw.watch squad <team code>")
-            return
-        cmd_squad(config, arg)
-    elif args.command == "scorers":
-        cmd_scorers(config)
-    elif args.command == "watch":
-        if not arg:
-            print("Usage: python -m fbw.watch watch <match_id or TEAM-TEAM>")
-            return
-        mid = resolve_match_arg(arg, config)
-        if not mid:
-            print(f"No match found for '{arg}'")
-            return
-        cmd_watch(config, mid)
     else:
-        cmd_now(config)
+        # Argument given — start live feed
+        mid = resolve_match_arg(arg, config)
+        if not mid:
+            print(f"No match found for '{arg}'")
+            return
+        from .feed import cmd_watch as feed_watch
+        feed_watch(config, mid, delay=args.delay)
 
 
 if __name__ == "__main__":
