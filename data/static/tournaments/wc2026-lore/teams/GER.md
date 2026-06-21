@@ -1,7 +1,7 @@
 # Germany (GER)
 
 ## Tournament History
-4x World Cup winners (1954, 1974, 1990, 2014). 20th appearance.
+4x World Cup winners (1954, 1974, 1990, 2014). 21st appearance.
 Back-to-back group stage exits in 2018 and 2022 shattered the
 "Turniermannschaft" (tournament team) identity. 2014 feels like
 ancient history. This squad carries the weight of redemption.
@@ -27,7 +27,9 @@ midfield. Partnered with Rudiger (#2, Real Madrid), Tah (#4, Bayern),
 or Schlotterbeck (#15, Dortmund).
 
 GK: Manuel Neuer (#1, Bayern) — 40 years old, still the starter.
-8th tournament. Sweeper-keeper pioneer.
+5th World Cup (second German ever alongside Lothar Matthaus to reach
+five). His 20th WC match vs Curacao tied Lloris's GK record.
+Sweeper-keeper pioneer.
 
 Depth: Undav (#26, Stuttgart) proved his worth as super-sub. Amiri
 (#20, Mainz) and Leweling (#9, Stuttgart) also impacted vs CIV.
