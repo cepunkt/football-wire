@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.2.1 (2026-06-21)
+
+Live-tested across ESP 4-0 KSA and BEL 0-0 IRN. Architecture cleanup.
+
+### Architecture
+- **Unified display module** (`display.py`) — all text formatting in one place, replaces scattered format logic across feed_sm.py
+- **Legacy feed engine removed** — 727 lines of dead code. `feed.py` is now CLI + header only (288 lines, down from 1015)
+- **Swappable engine architecture** — `feed.py` points at `feed_sm.py`, future engines can be developed independently
+
+### Features
+- **Direction-aware foul/offside positions** — "in own half, near own box, right" instead of neutral zones. Uses play direction tracking from state machine.
+- **Direction swap announcements** — emitted at half boundaries via side_outputs
+- **Keeper names on saves** — `IRN | Alireza BEIRANVAND saves.` instead of anonymous text
+- **Voided goals in catchup** — `~~GOAL VOIDED~~` instead of confusing `>>GOAL<< [0-0]`
+- **Corner position** — near side / far side instead of wrong shot-position format
+- **Period-keyed stats ingestion** — `fbw ingest <match_id> --period 1H`, stores 1H and FT alongside
+- **Enrichment corrections direction-aware** — post-emit fouls/offsides get same directional context as live events
+
+### Fixes
+- **fbw-watch uses SM engine** — was hardwired to legacy cmd_watch
+- **Duplicate enrichment emissions** — PositionX and PositionY marked as pair
+- **SM event deduplication** — side_outputs channel for internal announcements, no double-counting
+- **Direction announcements in feed stream** — were silently swallowed inside state machine
+- **Score verification on match JSON change** — watchdog monitors match data file for VAR/phantom goal detection
+
+### Live-verified (BEL 0-0 IRN)
+- Taremi disallowed goal → score verification voided phantom goal → catchup shows ~~GOAL VOIDED~~ [0-0]
+- Jahanbakhsh foul at (6,7) → "in own half, near own box" — first live directional foul
+- Beiranvand saves → keeper name on every save event
+- Direction swap at half-time → Belgium low X, Iran high X confirmed by shot coordinates
+- No duplicate enrichment lines throughout second half
+
 ## 0.2.0 (2026-06-21)
 
 First public release. Complete rebuild from the wc26 companion PoC.

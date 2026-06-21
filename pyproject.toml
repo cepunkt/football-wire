@@ -1,6 +1,6 @@
 [project]
 name = "football-wire"
-version = "0.2.0"
+version = "0.2.1"
 description = "Live football match data pipeline for LLM companions and terminal clients"
 readme = "README.md"
 license = {text = "MIT"}
