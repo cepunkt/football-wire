@@ -868,7 +868,7 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
     )
 
     # Build player name lookup
-    from .feed_sm import init_player_names
+    from .display import init_player_names
     init_player_names(raw_match)
 
     # Preamble + lean header

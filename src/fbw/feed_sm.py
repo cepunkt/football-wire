@@ -19,6 +19,12 @@ from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
 from .adapters import fifa_event_to_input, fifa_match_to_score, espn_stats_to_input
 from .config import get_config
+from .display import (
+    format_event as display_format,
+    format_enrichment_correction,
+    init_player_names,
+    player_name as _resolve_player_name,
+)
 from .football import MatchMinute, MatchPhase
 from .state import (
     MatchStateMachine, StateInput, StateOutput,
@@ -66,321 +72,17 @@ class BufferedOutput:
     source_id: str = ""
 
 
-# --- Format StateOutput for feed ---
+# --- Format (delegated to display.py) ---
 
 def format_output(out: StateOutput, sm: MatchStateMachine) -> str | None:
-    """Format a StateOutput for the feed stream."""
-    minute = out.minute
-    data = out.data
-    flags = out.flags
-
-    # Phase prefix
-    phase_prefix = minute.phase_prefix if minute.base > 0 else ""
-    minute_str = minute.display if minute.base > 0 else ""
-    time_col = f"{phase_prefix:>3} {minute_str:<8}" if phase_prefix else f"    {minute_str:<8}"
-
-    # Score
-    score = sm.score
-    score_str = f"[{score[0]}-{score[1]}]"
-
-    event_type = data.get("type", data.get("action", ""))
-
-    if out.kind == OutputKind.EVENT:
-        return _format_event_output(time_col, data, score_str, sm, flags)
-    elif out.kind == OutputKind.CORRECTION:
-        return _format_correction_output(time_col, data, score_str, sm)
-    elif out.kind == OutputKind.STATS:
-        return None  # handled separately
-    elif out.kind == OutputKind.ANNOTATION:
-        text = data.get("text", "")
-        return f"{time_col}  NOTE  {text}"
-    return None
+    """Format a StateOutput for the feed stream. Delegates to display module."""
+    return display_format(out, sm)
 
 
-def _format_event_output(
-    time_col: str, data: dict, score_str: str,
-    sm: MatchStateMachine, flags: list[str],
-) -> str | None:
-    event_type = data.get("type", data.get("action", ""))
-    raw_type = data.get("event_type_raw")
-
-    # Period events
-    if event_type in ("start", "end"):
-        phase = data.get("phase", "")
-        if event_type == "start":
-            return f"{time_col}--- PERIOD              The referee signals the start. {score_str}"
-        else:
-            return f"{time_col}--- PERIOD END          The referee brings the period to an end. {score_str}"
-
-    # Voided goals (shown in catchup when score verification already ran)
-    if event_type == "goal_voided" or data.get("voided"):
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        player_name = _resolve_player_name(player_id, sm)
-        return f"{time_col}~~GOAL VOIDED~~         {team_abbr} | {player_name} — disallowed {score_str}"
-
-    # Goals
-    if event_type == "goal":
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        shot = data.get("shot_data")
-        shot_str = ""
-        if shot:
-            shot_str = _format_shot_data(shot)
-
-        player_name = _resolve_player_name(player_id, sm)
-        is_pen = " (pen)" if data.get("is_penalty") else ""
-        og = " (OG)" if data.get("own_goal") else ""
-        flag_str = " [SUSPECT]" if flags else ""
-
-        return (f"{time_col}>>GOAL<<{is_pen}{og}            "
-                f"{team_abbr} | {player_name} scores!! "
-                f"{shot_str}{score_str}{flag_str}")
-
-    # Assist
-    if event_type == "assist":
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        player_name = _resolve_player_name(player_id, sm)
-        return f"{time_col}ASSIST                  {team_abbr} | Assisted by {player_name}. {score_str}"
-
-    # Substitutions
-    if event_type == "sub":
-        team_abbr = data.get("team_abbr", "???")
-        on_id = data.get("on", "")
-        off_id = data.get("off", "")
-        on_name = _resolve_player_name(on_id, sm)
-        off_name = _resolve_player_name(off_id, sm)
-        flag_str = ""
-        if "both_players_on_pitch" in flags:
-            flag_str = " [SUSPECT: both on pitch]"
-        elif "neither_player_on_pitch" in flags:
-            flag_str = " [SUSPECT: neither on pitch]"
-        return (f"{time_col}SUB                     {team_abbr} | "
-                f"ON: {on_name}, OFF: {off_name} {score_str}{flag_str}")
-
-    # Cards
-    if event_type in ("yellow", "red", "second_yellow", "second_yellow_red"):
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        player_name = _resolve_player_name(player_id, sm)
-        card_map = {"yellow": "YELLOW", "red": "RED",
-                    "second_yellow": "SECOND YELLOW/RED",
-                    "second_yellow_red": "SECOND YELLOW/RED"}
-        card_label = card_map.get(event_type, event_type.upper())
-        return f"{time_col}{card_label:<24}{team_abbr} | {player_name} {score_str}"
-
-    # Fouls
-    if event_type == "foul":
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        player_name = _resolve_player_name(player_id, sm)
-        pos_str = _format_position(data, sm)
-        return f"{time_col}FOUL                    {team_abbr} | {player_name} commits a foul.{pos_str} {score_str}"
-
-    # Offside
-    if event_type == "offside":
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        player_name = _resolve_player_name(player_id, sm)
-        pos_str = _format_position(data, sm)
-        return f"{time_col}OFFSIDE                 {team_abbr} | {player_name} is ruled offside.{pos_str} {score_str}"
-
-    # Shots
-    if event_type == "shot":
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        player_name = _resolve_player_name(player_id, sm)
-        shot_str = _format_shot_data(data)
-        on_target = data.get("on_target", False)
-        confidence = "(on target)" if on_target else ""
-        return (f"{time_col}SHOT {confidence:<14}     "
-                f"{team_abbr} | {player_name} attempts an effort on goal. "
-                f"{shot_str}{score_str}")
-
-    # Saves
-    if event_type == "save":
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        # Try to find the goalkeeper's name from the player ID
-        player_id = data.get("player_id", "")
-        if player_id:
-            keeper_name = _resolve_player_name(player_id, sm)
-            return f"{time_col}SAVE                    {team_abbr} | {keeper_name} saves. {score_str}"
-        return f"{time_col}SAVE                    {team_abbr} | The goalkeeper saves. {score_str}"
-
-    # Corners
-    if event_type == "corner":
-        player_id = data.get("player_id", "")
-        team = sm._team_for_id(data.get("team_id", ""))
-        team_abbr = team.abbreviation if team else "???"
-        player_name = _resolve_player_name(player_id, sm)
-        return f"{time_col}CORNER                  {team_abbr} | {player_name} takes a corner kick. {score_str}"
-
-    # Interruptions
-    if event_type in ("pause", "resume", "delay", "injury", "var_review"):
-        action_map = {
-            "pause": "PAUSE                   Match paused",
-            "resume": "RESUME                  Match resumed after interruption",
-            "delay": "DELAY                   Match paused for unspecified reasons",
-            "injury": "INJURY                  Play stopped for injury",
-            "var_review": "VAR                     VAR review in progress",
-        }
-        label = action_map.get(event_type, event_type.upper())
-        return f"{time_col}{label} {score_str}"
-
-    # Play direction determined
-    if event_type == "direction_determined":
-        desc = data.get("description", "")
-        return f"{time_col}--- {desc} ---"
-
-    # Period changes that aren't start/end (coin toss etc)
-    if event_type in ("coin_toss", "coin_side"):
-        return None  # skip these
-
-    # Fallback
-    desc = data.get("description", "")
-    if desc:
-        return f"{time_col}{desc} {score_str}"
-    return None
-
-
-def _format_correction_output(
-    time_col: str, data: dict, score_str: str,
-    sm: MatchStateMachine,
-) -> str | None:
-    corr_type = data.get("type", "")
-    if corr_type == "goal_enriched":
-        shot_data = data.get("shot_data", {})
-        shot_str = _format_shot_data(shot_data)
-        player_name = _resolve_player_name(data.get("player_id", ""), sm)
-        return f"{time_col}>>GOAL<< (ENRICHED)     {player_name} {shot_str}{score_str}"
-    elif corr_type == "goal_voided":
-        player_name = _resolve_player_name(data.get("player_id", ""), sm)
-        reason = data.get("reason", "")
-        return f"{time_col}~~GOAL VOIDED~~         {player_name} goal disallowed. {reason} {score_str}"
-    return None
-
-
-def _format_position(data: dict, sm: MatchStateMachine) -> str:
-    """Format position data for fouls/offsides.
-
-    When play direction is known, describes position relative to
-    the team's attacking direction (own half / opponent's half).
-    Falls back to neutral zone description without direction.
-    """
-    px = data.get("position_x")
-    py = data.get("position_y")
-    if px is None or py is None:
-        return ""
-
-    px, py = float(px), float(py)
-    team_id = data.get("team_id", "")
-
-    # Direction-aware description
-    if sm.direction and team_id:
-        attacks_high = sm.direction.attacks_high_x(team_id, sm.home.team_id)
-        if attacks_high:
-            in_own_half = px < 50
-        else:
-            in_own_half = px > 50
-
-        half = "in own half" if in_own_half else "in opponent's half"
-
-        # Proximity to goal
-        if attacks_high:
-            dist_to_opp_goal = (100 - px) / 100 * 105
-            dist_to_own_goal = px / 100 * 105
-        else:
-            dist_to_opp_goal = px / 100 * 105
-            dist_to_own_goal = (100 - px) / 100 * 105
-
-        if dist_to_opp_goal <= 25:
-            zone = "near opponent's box"
-        elif dist_to_own_goal <= 25:
-            zone = "near own box"
-        else:
-            zone = "midfield"
-
-        # Side from attacker's perspective
-        # Normalize Y same way ShotPosition does
-        if attacks_high:
-            ny = py             # keep Y
-        else:
-            ny = 100.0 - py     # flip Y
-        side = "left" if ny > 60 else "right" if ny < 40 else "central"
-
-        return f" | {half}, {zone}, {side} ({px:.0f},{py:.0f})"
-
-    # Neutral fallback (no direction known)
-    if 35 <= px <= 65:
-        zone = "midfield"
-    elif px < 20 or px > 80:
-        zone = "near penalty area"
-    else:
-        zone = "between midfield and box"
-    side = "left" if py < 35 else "right" if py > 65 else "central"
-    return f" | {zone}, {side} ({px:.0f},{py:.0f})"
-
-
-def _format_shot_data(data: dict) -> str:
-    """Format shot position/placement data into a readable string."""
-    parts = []
-    if "position_x" in data and "position_y" in data:
-        from .model import ShotPosition
-        sp = ShotPosition.from_raw(data["position_x"], data["position_y"])
-        parts.append(f"from {sp.distance_m:.0f}m, {sp.zone}, {sp.side} "
-                     f"({data['position_x']:.0f},{data['position_y']:.0f})")
-    if "gate_x" in data and "gate_y" in data:
-        gx, gy = data["gate_x"], data["gate_y"]
-        # Simple placement description
-        height = "low" if gy < 30 else "high" if gy > 70 else "mid-height"
-        side = "left" if gx < 40 else "right" if gx > 60 else "centre"
-        parts.append(f"placed {height}, {side} ({gx:.0f},{gy:.0f})")
-    if parts:
-        return "| " + " ".join(parts) + " "
-    return ""
-
-
-# Player name cache — built from match data
-_player_names: dict[str, str] = {}
-
-
-def init_player_names(match_data: dict) -> None:
-    """Build player ID → name lookup from match data."""
-    _player_names.clear()
-    for side in ("HomeTeam", "AwayTeam", "Home", "Away"):
-        team = match_data.get(side)
-        if not team or not isinstance(team, dict):
-            continue
-        for p in (team.get("Players") or []):
-            pid = str(p.get("IdPlayer", ""))
-            if not pid:
-                continue
-            # Name from localized fields
-            name = ""
-            for field in ("ShortName", "PlayerName"):
-                v = p.get(field, [])
-                if isinstance(v, list) and v and isinstance(v[0], dict):
-                    name = v[0].get("Description", "")
-                    if name:
-                        break
-            if name:
-                _player_names[pid] = name
-
-
-def _resolve_player_name(player_id: str, sm: MatchStateMachine) -> str:
-    """Resolve a FIFA player ID to a name."""
-    if player_id in _player_names:
-        return _player_names[player_id]
-    return f"Player({player_id})"
+# Legacy aliases removed — all formatting now in display.py
+# _format_event_output, _format_correction_output, _format_shot_data,
+# _format_position, _player_names, init_player_names, _resolve_player_name
+# are all in display.py now.
 
 
 # --- State Machine Feed Engine ---
@@ -724,54 +426,20 @@ class SMFeedEngine:
         if not original:
             return
 
-        mapped = self._ENRICHMENT_FIELD_MAP.get(field)
-
         # For coordinates, wait until we have both X and Y
         if field in ("PositionX", "PositionY"):
             cache = self._enrichment_cache.get(eid, {})
-            px = cache.get("PositionX")
-            py = cache.get("PositionY")
-            if px is None or py is None:
+            if cache.get("PositionX") is None or cache.get("PositionY") is None:
                 return
             # Mark both as done to prevent duplicate emission
             self._emitted_fields[eid].add("PositionX")
             self._emitted_fields[eid].add("PositionY")
-            from .model import ShotPosition
-            sp = ShotPosition.from_raw(float(px), float(py))
-            minute = original.minute
-            phase_prefix = minute.phase_prefix if minute.base > 0 else ""
-            minute_str = minute.display if minute.base > 0 else ""
-            time_col = f"{phase_prefix:>3} {minute_str:<8}" if phase_prefix else f"    {minute_str:<8}"
 
-            # Get context from original output
-            team_abbr = ""
-            player_name = ""
-            event_type = original.data.get("type", "")
-            team = self.sm._team_for_id(original.data.get("team_id", ""))
-            if team:
-                team_abbr = team.abbreviation
-            pid = original.data.get("player_id", "")
-            if pid:
-                player_name = _resolve_player_name(pid, self.sm)
-
-            marker = event_type.upper() if event_type else "EVENT"
-            self._pending_corrections.append(
-                f">> ENRICHED: {minute_str}  {marker:<20}"
-                f"{team_abbr} | {player_name} "
-                f"| from {sp.distance_m:.0f}m, {sp.zone}, {sp.side} "
-                f"({px:.0f},{py:.0f})"
-            )
-
-        elif field == "EventDescription":
-            # Description change — could be goal disallowed, player correction
-            desc = value
-            if isinstance(desc, list) and desc and isinstance(desc[0], dict):
-                desc = desc[0].get("Description", "")
-            if desc:
-                score = self.sm.score
-                self._pending_corrections.append(
-                    f">> CORRECTED: {desc} [{score[0]}-{score[1]}]"
-                )
+        # Delegate formatting to display module
+        cache = self._enrichment_cache.get(eid, {})
+        text = format_enrichment_correction(original, field, cache, self.sm)
+        if text:
+            self._pending_corrections.append(text)
 
     def collect_ready(self) -> list[str]:
         now = time.time()
