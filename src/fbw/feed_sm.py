@@ -112,6 +112,14 @@ def _format_event_output(
         else:
             return f"{time_col}--- PERIOD END          The referee brings the period to an end. {score_str}"
 
+    # Voided goals (shown in catchup when score verification already ran)
+    if event_type == "goal_voided" or data.get("voided"):
+        player_id = data.get("player_id", "")
+        team = sm._team_for_id(data.get("team_id", ""))
+        team_abbr = team.abbreviation if team else "???"
+        player_name = _resolve_player_name(player_id, sm)
+        return f"{time_col}~~GOAL VOIDED~~         {team_abbr} | {player_name} — disallowed {score_str}"
+
     # Goals
     if event_type == "goal":
         player_id = data.get("player_id", "")
@@ -559,10 +567,29 @@ class SMFeedEngine:
         # Emit key events only (compact catchup)
         key_types = {"goal", "sub", "yellow", "red", "second_yellow",
                      "period", "goal_voided", "goal_enriched",
-                     "direction_determined"}
+                     "direction_determined", "var_review"}
         key_outputs = [o for o in outputs
                        if o.data.get("type") in key_types
-                       or o.data.get("action") in ("start", "end")]
+                       or o.data.get("action") in ("start", "end")
+                       or o.data.get("action") == "var_review"]
+
+        # Filter out voided goals — score verification already ran,
+        # showing the bare goal without context is confusing
+        voided_players = set()
+        for g in self.sm.goals:
+            if g.voided:
+                voided_players.add((g.minute.base, g.player_id))
+
+        filtered = []
+        for o in key_outputs:
+            if o.data.get("type") == "goal":
+                key = (o.minute.base, o.data.get("player_id", ""))
+                if key in voided_players:
+                    # Replace with voided annotation
+                    o.data["type"] = "goal_voided"
+                    o.data["voided"] = True
+            filtered.append(o)
+        key_outputs = filtered
 
         if key_outputs or score_corrections:
             self.emit("[Catchup]")
