@@ -1,20 +1,14 @@
 #!/usr/bin/env bash
 # football-wire CLI wrapper
-# Resolves venv from local config, handles PYTHONPATH
+# Handles PYTHONPATH. Activates container venv if present.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Read venv from local config if available
-VENV=""
-LOCAL_CFG="$SCRIPT_DIR/fbw.config.local.toml"
-if [[ -f "$LOCAL_CFG" ]]; then
-    VENV=$(grep -E '^venv\s*=' "$LOCAL_CFG" 2>/dev/null | sed 's/.*=\s*"\(.*\)"/\1/' | head -1)
-fi
-
-# Activate venv if found
-if [[ -n "$VENV" && -f "$VENV/bin/activate" ]]; then
-    source "$VENV/bin/activate"
+# Container environment: activate mounted venv if available
+# Host: system Python has everything, no venv needed
+if [[ -f "/opt/ws-venvs/ml/bin/activate" ]]; then
+    source /opt/ws-venvs/ml/bin/activate
 fi
 
 export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
