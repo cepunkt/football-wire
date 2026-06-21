@@ -834,11 +834,25 @@ class MatchStateMachine:
         )
 
     def _apply_discipline(self, inp: StateInput) -> StateOutput:
-        """Handle cards and fouls."""
+        """Handle cards, fouls, and offsides.
+
+        Offsides are definitive direction evidence — by rule, a player
+        can only be offside in the opponent's half.
+        """
         player_id = inp.data.get("player_id", "")
         team_id = inp.data.get("team_id", "")
-        card_type = inp.data.get("card_type", "")  # "yellow", "red", "second_yellow", "foul"
+        card_type = inp.data.get("card_type", "")  # "yellow", "red", "second_yellow", "foul", "offside"
         flags = []
+
+        # Offside as direction evidence
+        raw_x = inp.data.get("position_x")
+        if card_type == "offside" and raw_x is not None and team_id:
+            direction_output = self._record_direction_evidence(
+                team_id=team_id, raw_x=float(raw_x),
+                event_type="offside", minute=inp.minute,
+            )
+            if direction_output:
+                self.side_outputs.append(direction_output)
 
         team = self._team_for_id(team_id) or self._team_for_player(player_id)
 
