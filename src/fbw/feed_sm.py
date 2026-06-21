@@ -172,7 +172,8 @@ def _format_event_output(
         team = sm._team_for_id(data.get("team_id", ""))
         team_abbr = team.abbreviation if team else "???"
         player_name = _resolve_player_name(player_id, sm)
-        return f"{time_col}FOUL                    {team_abbr} | {player_name} commits a foul. {score_str}"
+        pos_str = _format_position(data, sm)
+        return f"{time_col}FOUL                    {team_abbr} | {player_name} commits a foul.{pos_str} {score_str}"
 
     # Offside
     if event_type == "offside":
@@ -180,7 +181,8 @@ def _format_event_output(
         team = sm._team_for_id(data.get("team_id", ""))
         team_abbr = team.abbreviation if team else "???"
         player_name = _resolve_player_name(player_id, sm)
-        return f"{time_col}OFFSIDE                 {team_abbr} | {player_name} is ruled offside. {score_str}"
+        pos_str = _format_position(data, sm)
+        return f"{time_col}OFFSIDE                 {team_abbr} | {player_name} is ruled offside.{pos_str} {score_str}"
 
     # Shots
     if event_type == "shot":
@@ -257,6 +259,59 @@ def _format_correction_output(
         reason = data.get("reason", "")
         return f"{time_col}~~GOAL VOIDED~~         {player_name} goal disallowed. {reason} {score_str}"
     return None
+
+
+def _format_position(data: dict, sm: MatchStateMachine) -> str:
+    """Format position data for fouls/offsides.
+
+    When play direction is known, describes position relative to
+    the team's attacking direction (own half / opponent's half).
+    Falls back to neutral zone description without direction.
+    """
+    px = data.get("position_x")
+    py = data.get("position_y")
+    if px is None or py is None:
+        return ""
+
+    px, py = float(px), float(py)
+    team_id = data.get("team_id", "")
+
+    # Direction-aware description
+    if sm.direction and team_id:
+        attacks_high = sm.direction.attacks_high_x(team_id, sm.home.team_id)
+        if attacks_high:
+            in_own_half = px < 50
+        else:
+            in_own_half = px > 50
+
+        half = "in own half" if in_own_half else "in opponent's half"
+
+        # Proximity to goal
+        if attacks_high:
+            dist_to_opp_goal = (100 - px) / 100 * 105
+            dist_to_own_goal = px / 100 * 105
+        else:
+            dist_to_opp_goal = px / 100 * 105
+            dist_to_own_goal = (100 - px) / 100 * 105
+
+        if dist_to_opp_goal <= 25:
+            zone = "near opponent's box"
+        elif dist_to_own_goal <= 25:
+            zone = "near own box"
+        else:
+            zone = "midfield"
+
+        return f" | {half}, {zone} ({px:.0f},{py:.0f})"
+
+    # Neutral fallback (no direction known)
+    if 35 <= px <= 65:
+        zone = "midfield"
+    elif px < 20 or px > 80:
+        zone = "near penalty area"
+    else:
+        zone = "between midfield and box"
+    side = "left" if py < 35 else "right" if py > 65 else "central"
+    return f" | {zone}, {side} ({px:.0f},{py:.0f})"
 
 
 def _format_shot_data(data: dict) -> str:

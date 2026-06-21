@@ -185,6 +185,9 @@ def fifa_event_to_input(
             data["card_type"] = "offside"
         data["player_id"] = player_id
         data["team_id"] = team_id
+        if pos_x is not None:
+            data["position_x"] = pos_x
+            data["position_y"] = pos_y
 
     elif category == InputCategory.SET_PIECE:
         if event_type == EventType.CORNER:
