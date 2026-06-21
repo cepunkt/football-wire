@@ -519,6 +519,25 @@ class MatchStateMachine:
                     self._swap_direction()
                     if self.direction:
                         flags.append("direction_swapped")
+                        home_abbr = self.home.abbreviation
+                        away_abbr = self.away.abbreviation
+                        home_arrow = "→ high X" if self.direction.home_end == AttackEnd.HIGH_X else "→ low X"
+                        away_arrow = "→ high X" if self.direction.away_end == AttackEnd.HIGH_X else "→ low X"
+                        self.side_outputs.append(StateOutput(
+                            kind=OutputKind.EVENT,
+                            minute=inp.minute,
+                            data={
+                                "type": "direction_determined",
+                                "home_end": self.direction.home_end.value,
+                                "away_end": self.direction.away_end.value,
+                                "description": (
+                                    f"Direction swapped: {home_abbr} {home_arrow}, "
+                                    f"{away_abbr} {away_arrow}"
+                                ),
+                            },
+                            trust=SourceTrust.EVENT,
+                            flags=["direction_swapped"],
+                        ))
 
                 valid = self.clock.transition(target_phase)
                 if not valid:
