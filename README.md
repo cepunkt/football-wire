@@ -21,10 +21,24 @@ daemon (polls APIs) → raw/ (untouched) → state machine → consumers
 
 ```bash
 # Requires Python 3.11+
+git clone https://github.com/cepunkt/football-wire.git
+cd football-wire
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .       # or: pip install requests watchdog pyyaml
+```
 
-# Start the daemon (polls live match data)
+Terminal 1: start the daemon and leave it running. It polls live data and populates `data/raw/`.
+
+```bash
+source .venv/bin/activate
 ./fbw-daemon
+```
+
+Terminal 2: query the schedule and start a feed.
+
+```bash
+source .venv/bin/activate
 
 # See what's on
 ./fbw-watch
@@ -48,6 +62,8 @@ PYTHONPATH=src python -m fbw.daemon
 PYTHONPATH=src python -m fbw.feed --delay 30 <match_id>
 PYTHONPATH=src python -m fbw.query groups
 ```
+
+If you start a feed before the daemon has fetched that match, it waits for event data. If no schedule exists yet, give the daemon a few seconds or run `./fbw fetch` once to populate the current window.
 
 ## Architecture
 

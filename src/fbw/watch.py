@@ -245,7 +245,7 @@ def cmd_now(config):
     """Rolling schedule — last 6 finished + next 6 upcoming."""
     schedule = load_schedule(config)
     if not schedule:
-        print("No schedule data. Run: python -m fbw fetch")
+        print("No schedule data. Run: ./fbw fetch")
         return
 
     finished = [m for m in schedule if m.get("MatchStatus") == 0]
@@ -321,7 +321,7 @@ def cmd_scorers(config):
     events_dir = config.paths.raw_events_dir
     matches_dir = config.paths.raw_matches_dir
     if not events_dir.exists():
-        print("No event data. Run: python -m fbw fetch --backfill")
+        print("No event data. Run: ./fbw fetch --backfill")
         return
 
     scorers: dict[str, dict] = {}  # player_name -> {goals, team}

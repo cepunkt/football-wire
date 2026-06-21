@@ -3,19 +3,39 @@
 ## Quick Start
 
 ```bash
-# From the football-wire repo directory — no venv setup needed,
-# shell wrappers handle it automatically:
+# From the football-wire repo directory:
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
 
-./fbw-daemon                  # start the data daemon (run first!)
+Terminal 1: start the daemon and leave it running.
+
+```bash
+source .venv/bin/activate
+./fbw-daemon
+```
+
+Terminal 2: inspect the schedule and query tournament data.
+
+```bash
+source .venv/bin/activate
 ./fbw-watch                   # what's on
 ./fbw-query groups            # tournament overview
 ```
+
+If you use separate terminals for daemon and watch commands, activate
+the virtualenv in each terminal or set `[paths] venv = ".venv"` in
+`fbw.config.local.toml`.
 
 ## The Daemon
 
 The daemon is the data engine. Start it first, leave it running.
 It polls the FIFA API and ESPN, writes raw data to disk. Everything
 else reads from those files.
+
+Run the daemon in one terminal. Use another terminal for `fbw-watch`
+and `fbw-query` while the daemon keeps polling.
 
 ```bash
 # Start (runs forever, picks up matches automatically):
@@ -123,9 +143,9 @@ preamble = true
 
 `fbw.config.local.toml` (gitignored, personal overrides):
 ```toml
-[sources]
-espn = true         # enable ESPN stats (possession, key passes)
-espn_interval = 60  # ESPN poll interval in seconds
+[source.espn]
+enabled = true      # enable ESPN stats (possession, key passes)
+poll_interval = 60  # ESPN poll interval in seconds
 
 [display]
 delay = 30          # your TV delay preference
@@ -154,11 +174,16 @@ data/
 
 ## Shell Wrappers
 
-All `fbw-*` scripts auto-detect the Python environment:
-- Container (LM sessions): activates `/opt/ws-venvs/ml`
-- Host (human): uses system Python directly
+All `fbw-*` scripts run with the current Python environment. If you
+use a virtualenv, activate it before running the wrappers, or set a
+venv path in `fbw.config.local.toml`:
 
-No manual venv activation or PYTHONPATH needed.
+```toml
+[paths]
+venv = ".venv"
+```
+
+No manual `PYTHONPATH` is needed when using the wrappers.
 
 ```
 ./fbw-daemon    # data poller (run first, leave running)
