@@ -198,14 +198,13 @@ def _format_event_output(
     # Saves
     if event_type == "save":
         team = sm._team_for_id(data.get("team_id", ""))
-        team_name = "unknown"
-        if team:
-            # Save is by the goalkeeper, display as team
-            if team.team_id == sm.home.team_id:
-                team_name = "home"
-            else:
-                team_name = "away"
-        return f"{time_col}SAVE                    The goalkeeper pulls off a save. {score_str}"
+        team_abbr = team.abbreviation if team else "???"
+        # Try to find the goalkeeper's name from the player ID
+        player_id = data.get("player_id", "")
+        if player_id:
+            keeper_name = _resolve_player_name(player_id, sm)
+            return f"{time_col}SAVE                    {team_abbr} | {keeper_name} saves. {score_str}"
+        return f"{time_col}SAVE                    {team_abbr} | The goalkeeper saves. {score_str}"
 
     # Corners
     if event_type == "corner":

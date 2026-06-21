@@ -211,6 +211,7 @@ def fifa_event_to_input(
                 data["on_target"] = False
         elif event_type == EventType.SAVE:
             data["type"] = "save"
+            data["player_id"] = player_id
             data["team_id"] = team_id
         elif event_type == EventType.ASSIST:
             data["type"] = "assist"
