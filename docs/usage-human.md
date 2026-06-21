@@ -3,15 +3,70 @@
 ## Quick Start
 
 ```bash
-# Activate Python environment with requests + watchdog
-source /path/to/venv/bin/activate
-
 # From the football-wire repo directory:
-cd /path/to/football-wire
+source /opt/ws-venvs/ml/bin/activate   # or your Python venv
 export PYTHONPATH=src
 ```
 
-## Fetch Data
+## Schedule & Live Feed
+
+```bash
+# What's on? Recent results + upcoming matches
+fbw watch
+
+# Start live feed for a match (any of these work):
+fbw watch #400021475          # copy-paste from schedule
+fbw watch TUN-JPN             # team codes
+fbw watch TUN                 # latest/next match for team
+fbw watch TUN --delay 30      # with anti-spoiler delay
+```
+
+## Query Tool
+
+```bash
+# All groups at a glance
+fbw query groups
+
+# Group detail with standings + results
+fbw query group F
+fbw query group AUT           # find by team code
+
+# Full 26-man squad with positions, ages, clubs
+fbw query squad JPN
+fbw query squad AUT
+
+# Match detail (cards, subs, stats)
+fbw query match GER-CIV
+fbw query match ECU           # latest match for team
+
+# Top scorers
+fbw query scorers
+
+# Find a player across all 48 squads
+fbw query player Musiala
+fbw query player Room
+fbw query player Messi
+```
+
+## Daemon (Host)
+
+The daemon polls APIs and writes raw data. Run on the host:
+
+```bash
+# Auto-track matches (1h ago to 6h ahead)
+python -m fbw.daemon
+
+# Track a specific match
+python -m fbw.daemon --match 400021475
+
+# Custom poll interval
+python -m fbw.daemon --interval 15
+```
+
+Daemon handles midnight UTC boundary. Stays alive until all tracked
+matches finish, then checks for upcoming ones.
+
+## Fetch & Process
 
 ```bash
 # Pull today's matches
@@ -20,91 +75,50 @@ python -m fbw fetch
 # Pull all historical matches
 python -m fbw fetch --backfill
 
-# Pull specific match
-python -m fbw fetch --match 400021454
-```
-
-## Run the Daemon (Live Matches)
-
-```bash
-# Auto-track today's matches, poll every 10 seconds
-python -m fbw.daemon
-
-# Track a specific match
-python -m fbw.daemon --match 400021454
-
-# Custom poll interval
-python -m fbw.daemon --interval 15
-```
-
-The daemon writes raw API data to `data/raw/api-fifa/`. It runs on the host and stays alive until all tracked matches finish or you Ctrl-C.
-
-## Watch a Match (Terminal)
-
-```bash
-# Live event tail
-python -m fbw.watch watch 400021454
-
-# With anti-spoiler delay (seconds)
-python -m fbw.feed --delay 90 400021454
-```
-
-## Query Data
-
-```bash
-# Rolling schedule (last 6 + next 6)
-python -m fbw.watch
-
-# Match detail with key events
-python -m fbw.watch match 400021454
-
-# Top scorers
-python -m fbw.watch scorers
-```
-
-## Process Raw Data
-
-```bash
-# Process all raw matches
+# Process raw → validated data
 python -m fbw process
-
-# Re-process from scratch
-python -m fbw process --flush
-
-# Process specific match
-python -m fbw process --match 400021454
+python -m fbw process --flush    # rebuild from scratch
 ```
 
 ## Configuration
 
-Edit `fbw.config.toml`:
-
+`fbw.config.toml`:
 ```toml
-[paths]
-data_dir = "data"
-
 [source.fifa]
 poll_interval = 10
 
 [display]
 delay = 90          # anti-spoiler seconds
-stats_interval = 15 # minutes between stats blocks
+stats_interval = 15 # match minutes between stats blocks
 preamble = true
 ```
 
-Override with environment variables:
-- `FBW_DATA_DIR` — data directory
-- `FBW_POLL_INTERVAL` — poll interval
-- `FBW_DELAY` — anti-spoiler delay
-- `FBW_CONFIG` — config file path
+Local overrides in `fbw.config.local.toml` (gitignored):
+```toml
+[sources]
+espn = true
+espn_interval = 60
 
-## Data Directories
+[display]
+delay = 30
+```
+
+## Data Layout
 
 ```
 data/
-  static/     ← git-tracked (team profiles, kits, venues, preamble)
-  raw/        ← gitignored (untouched API responses)
-  processed/  ← gitignored (cleaned, validated data)
+  static/                          ← git-tracked
+    preamble/                      ← feed context notes
+    tournaments/
+      wc2026.toml                  ← tournament rules
+      wc2026-data/                 ← canonical data (worldcup.json, CC0)
+      wc2026-enrichment/           ← structured facts (coaches, heights)
+      wc2026-lore/                 ← narrative context (teams, groups, matches)
+        teams/GER.md
+        groups/E.md
+        matches/GER-CIV-postgame.md
+  raw/                             ← gitignored (API responses)
+  processed/                       ← gitignored (validated data)
+  feeds/                           ← gitignored (feed session logs)
+  aggregate/                       ← gitignored (ESPN, multi-source)
 ```
-
-Raw and processed data are generated. Delete and re-fetch/re-process at any time.

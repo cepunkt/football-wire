@@ -3,118 +3,154 @@
 ## What This Is
 
 football-wire (fbw) is a live football match data pipeline. It bridges
-public API data into your conversation context through stdout events.
-You receive match events as they happen — goals, shots, fouls, subs,
-cards — and can discuss the match with the user who is watching.
+public API data into your conversation through Monitor events. You
+receive match events as they happen and discuss the match with the
+user who is watching on TV.
 
-## How It Works
-
-```
-Daemon (polls API) → raw data files → Feed client (your interface) → stdout → Monitor
-```
-
-Each stdout line is one event. Your harness delivers them as notifications.
-
-## Integration (Claude Code)
+## Starting a Feed
 
 ```bash
 # In Monitor:
-source /path/to/venv/bin/activate
 cd /path/to/football-wire
-PYTHONPATH=src python -m fbw.feed --delay 0 <match_id>
+source /path/to/venv/bin/activate
+PYTHONPATH=src python -m fbw.feed --delay 30 --cycle 10 <match_id>
 ```
 
-The feed emits:
-1. **Preamble** — context notes about the data source and football rules
-2. **Match header** — teams, lineups, venue, referee
-3. **Team profiles** — background on both teams
-4. **Catchup events** — everything that happened before you connected
-5. **Live events** — one per line as they arrive
-6. **Stats blocks** — computed every 15 match minutes
+The `--delay` syncs with TV broadcast (~30s). The `--cycle` controls
+how often events are batched (10s default).
 
-## Reading Events
+## What You Receive
 
+### 1. Preamble (data quality notes)
+Inline context about how to read the data — coordinate system,
+trust levels, known API issues. Read and internalise.
+
+### 2. Match header
+Score, venue, referee, coaches, lineups. One line per squad.
+
+### 3. Context pointers
 ```
-    16'  >>GOAL<<                MEX | description [1-0]
-     7'  SHOT (on target)        MEX | desc | from 27m, outside box, right (76,37) placed low, right (75,3) [0-0]
-    71'  SUB                     MEX | desc | ON: Player (18, MF), OFF: Player (7, MF) [1-0]
-!!  33'  RED                     QAT | desc [2-0]
+Context (read for background):
+  Team lore:    data/static/tournaments/wc2026-lore/teams/{ECU,CUW}.md
+  Pre-match:    data/static/tournaments/wc2026-lore/matches/ECU-CUW-pregame.md
+  Group:        data/static/tournaments/wc2026-lore/groups/E.md
+  Match so far: data/feeds/400021465.md
 ```
 
-### Format: `[!!] minute  MARKER  TEAM | description [score]`
+**Read these files** for team narratives, group standings, pre-match
+context, and match history. The Monitor stream stays lean — deep
+context is in files, not stdout.
 
-- **`!!`** prefix: event arrived out of order (late from API). It happened earlier than the previous event.
-- **Minute**: the minute being played (45' = clock shows 44:xx). See preamble.
-- **Marker**: event type. `>>GOAL<<`, `SHOT`, `SHOT (on target)`, `SHOT (off target)`, `SUB`, `YELLOW`, `RED`, `FOUL`, `CORNER`, `OFFSIDE`, `** VAR`, `SAVE`, `PAUSE`, `RESUME`, `--- PERIOD`, `--- PERIOD END`.
-- **Team tag**: three-letter code from roster. More reliable than the description text.
-- **Score**: `[home-away]` at the time of the event. May be stale (see preamble).
+### 4. Live events
+```
+ 1H  30'  >>GOAL<<            CIV | Franck KESSIE scores!! [1-1]
+ 2H  68'  SHOT (on target)    GER | Deniz UNDAV | from 6m, 6-yard box, central (5,47) placed mid-height, centre (51,42) [1-1]
+ 2H  75'  SUB                 CIV | ON: Simon ADINGRA, OFF: Amad DIALLO [1-1]
+     24'  FOUL                ECU | Alan FRANCO commits a foul. | at 35m, outside box, central (38,46) [0-0]
+```
 
-### Shot Confidence
+### Event format: `phase  minute  MARKER  TEAM | details [score]`
 
-Based on data completeness, not editorial judgment:
-- `SHOT (on target)` — has position AND goal placement coordinates
-- `SHOT (off target)` — has position but no goal placement
-- `SHOT` (plain) — no coordinate data. Could be blocked, shanked, or barely an attempt.
+- **Phase prefix**: `1H`, `2H`, `ET1`, `ET2`, `PEN`
+- **Minute**: `45'` = in the 45th minute (clock shows 44:xx).
+  Added time: `45'+3'` = 3rd minute of added time.
+- **Marker**: `>>GOAL<<`, `SHOT`, `SHOT (on target)`, `SHOT (off target)`,
+  `SUB`, `YELLOW`, `RED`, `FOUL`, `CORNER`, `OFFSIDE`, `SAVE`,
+  `PAUSE`, `RESUME`, `--- PERIOD`, `--- PERIOD END`, `** VAR`
+- **Team tag**: three-letter code from roster. Trust this over description.
+- **Score**: `[home-away]` — may be stale on individual events.
+- **`!!` prefix**: late arrival — happened earlier than previous event.
+- **`[suspect]`**: data couldn't be fully verified.
 
-### Shot Enrichment
-
-When coordinates are available:
+### Shot enrichment
 ```
 from 27m, outside box, right (76,37) placed low, right (75,3)
-      │         │        │    │         │    │      │    │
-      │         │        │    │         │    │      │    └─ raw gate coords
-      │         │        │    │         │    │      └─ gate side
-      │         │        │    │         │    └─ gate height
-      │         │        │    │         └─ "placed" = goal gate data
-      │         │        │    └─ raw pitch coords
-      │         │        └─ attacker's left/right perspective
-      │         └─ zone (6-yard/inside box/edge/outside/long range)
-      └─ distance from goal centre in metres
 ```
+Distance from goal, pitch zone, attacker's side, raw coordinates,
+goal gate placement. Zone uses both depth and width constraints.
 
-### Substitutions
-
+### Foul/offside enrichment
 ```
-ON: Player (18, MF), OFF: Player (7, MF)
+at 35m, outside box, central (38,46)
 ```
+Position where the foul/offside occurred.
 
-Resolved from roster tracking, not API descriptions. The API sometimes
-inverts ON/OFF in the description text — trust the tags, not the text.
+### Post-emit corrections
+```
+>> ENRICHED: 77'  SHOT  ECU | Valencia | from 11m, inside box, central (90,52)
+```
+When coordinates arrive after an event was already emitted. Includes
+original event context for mapping.
+
+### Stats blocks (ESPN)
+```
+--- Stats 63' (ESPN) ---
+GER    CIV
+Possession  60.6%  39.4%
+Shots     10      8
+On target      2      2
+Key passes      8      5
+Corners      7      2
+Fouls      2      5
+Goals      0      1
+---
+```
+Real possession and stats from ESPN. Emitted every 15 match minutes.
 
 ## What You Don't See
 
-The data has gaps. The user watching the match sees things the API doesn't capture:
-- How a shot was taken (header, volley, bicycle kick)
-- Near-misses that weren't registered as shots
+The event stream is ~20% of the match. The API misses:
+- How shots were taken (header, volley, free kick)
+- Near-misses not registered as shots
+- Build-up play, pressing patterns, tactical shape
 - Defensive blocks, last-ditch tackles
-- Atmosphere, crowd reactions, VAR controversy details
-- Whether a foul was genuinely a foul or just contact sport
+- Atmosphere, crowd, VAR controversy details
+- Why a goal was disallowed (no VAR event detail)
+- Corners are under-logged (API misses many)
 
-**Ask the user.** "What happened?" is the most valuable question when an event
-seems incomplete. The data tells you what, the user tells you how.
+**Ask the user.** They are watching on TV. Their eyes are the best
+sensor. "What happened?" is always a valid question.
 
 ## What To Distrust
 
-Read the preamble at the start of each session. Key issues:
-- Event ordering: `!!` marks late arrivals but can't fix them
-- Substitution descriptions: ON/OFF tags are reliable, description text is not
-- Team names in descriptions: occasionally wrong. Trust the team tag prefix.
-- Scores: may be inconsistent across events at the same minute
-- Foul counts: reflect referee interpretation as much as player behaviour
+- **Scores on events**: may be stale. The match header score is more
+  reliable. Cross-check with ESPN stats block.
+- **Substitution descriptions**: the API text may invert ON/OFF.
+  Trust the `ON:` / `OFF:` tags which are resolved from roster tracking.
+  `[suspect]` means resolution failed — ask the user.
+- **Team names in descriptions**: occasionally wrong. Trust the team
+  tag prefix (GER, CIV, ECU).
+- **Shot counts**: API logs more than official stats count. ESPN stats
+  block has the official numbers.
+- **Hydration breaks**: logged as PAUSE or DELAY (inconsistent between
+  matches). These are scheduled advertising breaks, not medical events.
 
-## Stats Blocks
+## Querying Data
 
-Emitted every 15 match minutes (configurable):
+You can read files and run commands between events:
 
+```bash
+# Group standings
+PYTHONPATH=src python -m fbw.query group E
+
+# Team squad
+PYTHONPATH=src python -m fbw.query squad JPN
+
+# Match detail
+PYTHONPATH=src python -m fbw.query match GER-CIV
+
+# Find a player
+PYTHONPATH=src python -m fbw.query player Musiala
+
+# All groups overview
+PYTHONPATH=src python -m fbw.query groups
 ```
---- Stats 31' ---
-                  MEX    KOR
-         Shots      3      1
-         Goals      1      0
-         Fouls      2      3
----
-```
 
-Computed from the event stream. Only non-zero rows shown. These are
-registered events only — true attacking pressure is always higher
-than shot count (blocked efforts aren't logged as shots).
+## Three-Source Sensor
+
+The best match companion uses three sources:
+1. **Feed** — event data, coordinates, stats blocks
+2. **Lore files** — team narratives, group context, pre-match reports
+3. **The user** — watching on TV, sees what the API can't
+
+Don't guess from data alone. Don't narrate without data. Use all three.
