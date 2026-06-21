@@ -21,6 +21,7 @@ from fbw.state import InputCategory, StateInput, SourceTrust
 
 _FIFA_CATEGORY: dict[int, InputCategory] = {
     EventType.GOAL: InputCategory.SCORE_CHANGE,
+    EventType.OWN_GOAL: InputCategory.SCORE_CHANGE,
     EventType.PENALTY_GOAL: InputCategory.SCORE_CHANGE,
     EventType.ASSIST: InputCategory.ATTEMPT,             # assist info, not a score change
     EventType.YELLOW: InputCategory.DISCIPLINE,
@@ -148,7 +149,8 @@ def fifa_event_to_input(
         data["type"] = "goal"
         data["player_id"] = player_id
         data["team_id"] = team_id
-        data["own_goal"] = False  # TODO: detect from description
+        data["own_goal"] = (event_type == EventType.OWN_GOAL
+                            or "own goal" in description.lower())
         data["is_penalty"] = event_type == EventType.PENALTY_GOAL
         data["event_score"] = (home_goals, away_goals)
 

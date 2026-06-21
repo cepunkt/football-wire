@@ -7,6 +7,7 @@
 
 [paths]
 data_dir = "data"
+# venv = ".venv"             # path to Python venv (leave empty for system Python)
 
 [source.fifa]
 base_url = "https://api.fifa.com/api/v3"

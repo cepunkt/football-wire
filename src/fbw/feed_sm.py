@@ -17,7 +17,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
-from .adapters import fifa_event_to_input, espn_stats_to_input
+from .adapters import fifa_event_to_input, fifa_match_to_score, espn_stats_to_input
 from .config import get_config
 from .football import MatchMinute, MatchPhase
 from .state import (
@@ -63,6 +63,7 @@ class BufferedOutput:
     raw_event_type: int | None
     buffered_at: float
     emit_after: float
+    source_id: str = ""
 
 
 # --- Format StateOutput for feed ---
@@ -226,6 +227,11 @@ def _format_event_output(
         label = action_map.get(event_type, event_type.upper())
         return f"{time_col}{label} {score_str}"
 
+    # Play direction determined
+    if event_type == "direction_determined":
+        desc = data.get("description", "")
+        return f"{time_col}--- {desc} ---"
+
     # Period changes that aren't start/end (coin toss etc)
     if event_type in ("coin_toss", "coin_side"):
         return None  # skip these
@@ -317,6 +323,7 @@ class SMFeedEngine:
         sm: MatchStateMachine,
         events_path: Path,
         enrichments_path: Path,
+        match_path: Path,
         match_data: dict,
         delay: int = 0,
         cycle_interval: int = 10,
@@ -326,6 +333,7 @@ class SMFeedEngine:
         self.sm = sm
         self.events_path = events_path
         self.enrichments_path = enrichments_path
+        self.match_path = match_path
         self.match_data = match_data
         self.delay = delay
         self.cycle_interval = cycle_interval
@@ -342,6 +350,11 @@ class SMFeedEngine:
         self._buffer: list[BufferedOutput] = []
         self._last_minute: float = -1.0
         self._last_stats_minute: float = 0.0
+
+        # Track emitted events for post-emit corrections
+        self._emitted_ids: dict[str, StateOutput] = {}  # source_id → output
+        self._emitted_fields: dict[str, set[str]] = {}  # source_id → enriched fields
+        self._pending_corrections: list[str] = []
 
         # Feed log
         self.log_path = log_path
@@ -378,6 +391,30 @@ class SMFeedEngine:
                 except json.JSONDecodeError:
                     pass
             self.enrichments_pos = f.tell()
+
+    def verify_score(self) -> list[str]:
+        """Re-read match JSON and cross-check score against SM state.
+
+        The daemon updates the match JSON on every poll. The match
+        endpoint has the canonical score. If SM's event-derived score
+        disagrees, the SM voids phantom goals.
+        """
+        lines = []
+        try:
+            with open(self.match_path) as f:
+                self.match_data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return lines
+
+        inp = fifa_match_to_score(self.match_data)
+        result = self.sm.apply(inp)
+
+        if result.kind == OutputKind.CORRECTION:
+            text = format_output(result, self.sm)
+            if text:
+                lines.append(text)
+
+        return lines
 
     def _enrich_raw(self, event_id: str, raw: dict) -> dict:
         if event_id in self._enrichment_cache:
@@ -433,19 +470,25 @@ class SMFeedEngine:
                 if inp.minute.sort_value >= 0:
                     self._last_minute = max(self._last_minute, inp.minute.sort_value)
 
+        # Verify score against canonical match data after replaying events
+        score_corrections = self.verify_score()
+
         # Emit key events only (compact catchup)
         key_types = {"goal", "sub", "yellow", "red", "second_yellow",
-                     "period", "goal_voided", "goal_enriched"}
+                     "period", "goal_voided", "goal_enriched",
+                     "direction_determined"}
         key_outputs = [o for o in outputs
                        if o.data.get("type") in key_types
                        or o.data.get("action") in ("start", "end")]
 
-        if key_outputs:
+        if key_outputs or score_corrections:
             self.emit("[Catchup]")
             for out in key_outputs:
                 text = format_output(out, self.sm)
                 if text:
                     self.emit(text)
+            for line in score_corrections:
+                self.emit(line)
 
         if self._last_minute > 0:
             self._last_stats_minute = self._last_minute
@@ -486,6 +529,7 @@ class SMFeedEngine:
                             raw_event_type=raw.get("Type"),
                             buffered_at=now,
                             emit_after=now + self.delay if self.delay > 0 else 0,
+                            source_id=eid,
                         ))
 
                     except json.JSONDecodeError:
@@ -493,6 +537,14 @@ class SMFeedEngine:
                 self.events_pos = f.tell()
         except OSError:
             pass
+
+    # Mapping from raw API field names to StateOutput data keys
+    _ENRICHMENT_FIELD_MAP = {
+        "PositionX": "position_x",
+        "PositionY": "position_y",
+        "GoalGatePositionX": "gate_x",
+        "GoalGatePositionY": "gate_y",
+    }
 
     def read_new_enrichments(self):
         if not self.enrichments_path.exists():
@@ -517,18 +569,92 @@ class SMFeedEngine:
                             self._enrichment_cache[eid] = {}
                         self._enrichment_cache[eid][fld] = new_val
 
-                        # Re-process buffered events with new enrichment
+                        # Apply to buffered events (not yet emitted)
                         for buf in self._buffer:
-                            if buf.output.data.get("source_id") == eid:
-                                # Re-enrich — would need raw event to re-process
-                                # For now, just note the enrichment
-                                pass
+                            if buf.source_id == eid:
+                                self._apply_enrichment_to_output(
+                                    buf.output, fld, new_val)
+                                break
+                        else:
+                            # Already emitted — queue correction
+                            if eid in self._emitted_ids:
+                                self._queue_correction(eid, fld, new_val)
 
                     except json.JSONDecodeError:
                         pass
                 self.enrichments_pos = f.tell()
         except OSError:
             pass
+
+    def _apply_enrichment_to_output(
+        self, output: StateOutput, field: str, value
+    ) -> None:
+        """Apply a raw API field enrichment to a StateOutput's data dict."""
+        mapped = self._ENRICHMENT_FIELD_MAP.get(field)
+        if mapped and value is not None:
+            output.data[mapped] = value
+            # Update on_target if we now have gate coordinates
+            if mapped in ("gate_x", "gate_y"):
+                if ("gate_x" in output.data and "gate_y" in output.data):
+                    output.data["on_target"] = True
+
+    def _queue_correction(self, eid: str, field: str, value) -> None:
+        """Queue a correction line for an already-emitted event."""
+        if eid not in self._emitted_fields:
+            self._emitted_fields[eid] = set()
+        if field in self._emitted_fields[eid]:
+            return  # already corrected this field
+        self._emitted_fields[eid].add(field)
+
+        original = self._emitted_ids.get(eid)
+        if not original:
+            return
+
+        mapped = self._ENRICHMENT_FIELD_MAP.get(field)
+
+        # For coordinates, wait until we have both X and Y
+        if field in ("PositionX", "PositionY"):
+            cache = self._enrichment_cache.get(eid, {})
+            px = cache.get("PositionX")
+            py = cache.get("PositionY")
+            if px is None or py is None:
+                return
+            from .model import ShotPosition
+            sp = ShotPosition.from_raw(float(px), float(py))
+            minute = original.minute
+            phase_prefix = minute.phase_prefix if minute.base > 0 else ""
+            minute_str = minute.display if minute.base > 0 else ""
+            time_col = f"{phase_prefix:>3} {minute_str:<8}" if phase_prefix else f"    {minute_str:<8}"
+
+            # Get context from original output
+            team_abbr = ""
+            player_name = ""
+            event_type = original.data.get("type", "")
+            team = self.sm._team_for_id(original.data.get("team_id", ""))
+            if team:
+                team_abbr = team.abbreviation
+            pid = original.data.get("player_id", "")
+            if pid:
+                player_name = _resolve_player_name(pid, self.sm)
+
+            marker = event_type.upper() if event_type else "EVENT"
+            self._pending_corrections.append(
+                f">> ENRICHED: {minute_str}  {marker:<20}"
+                f"{team_abbr} | {player_name} "
+                f"| from {sp.distance_m:.0f}m, {sp.zone}, {sp.side} "
+                f"({px:.0f},{py:.0f})"
+            )
+
+        elif field == "EventDescription":
+            # Description change — could be goal disallowed, player correction
+            desc = value
+            if isinstance(desc, list) and desc and isinstance(desc[0], dict):
+                desc = desc[0].get("Description", "")
+            if desc:
+                score = self.sm.score
+                self._pending_corrections.append(
+                    f">> CORRECTED: {desc} [{score[0]}-{score[1]}]"
+                )
 
     def collect_ready(self) -> list[str]:
         now = time.time()
@@ -545,6 +671,15 @@ class SMFeedEngine:
             text = format_output(buf.output, self.sm)
             if text:
                 lines.append(text)
+            # Track emitted for post-emit corrections
+            if buf.source_id:
+                self._emitted_ids[buf.source_id] = buf.output
+
+        # Append any pending corrections
+        if self._pending_corrections:
+            lines.extend(self._pending_corrections)
+            self._pending_corrections.clear()
+
         return lines
 
     def check_stats(self) -> str | None:
@@ -579,7 +714,8 @@ class SMFeedEngine:
         self._last_stats_minute = current
         return None
 
-    def run_cycle(self, events_changed: bool, enrichments_changed: bool):
+    def run_cycle(self, events_changed: bool, enrichments_changed: bool,
+                  match_changed: bool = False):
         if events_changed:
             self.read_new_events()
         if enrichments_changed:
@@ -588,9 +724,16 @@ class SMFeedEngine:
         event_lines = self.collect_ready()
         stats_block = self.check_stats()
 
+        # Score verification when match data updated by daemon
+        score_lines = []
+        if match_changed:
+            score_lines = self.verify_score()
+
         output = []
         if event_lines:
             output.extend(event_lines)
+        if score_lines:
+            output.extend(score_lines)
         if stats_block:
             output.append(stats_block)
 

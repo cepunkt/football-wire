@@ -1,14 +1,32 @@
 #!/usr/bin/env bash
 # football-wire CLI wrapper
-# Handles PYTHONPATH. Activates container venv if present.
+# Activates venv from config if set, then runs fbw.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Container environment: activate mounted venv if available
-# Host: system Python has everything, no venv needed
-if [[ -f "/opt/ws-venvs/ml/bin/activate" ]]; then
-    source /opt/ws-venvs/ml/bin/activate
+# Resolve venv: FBW_VENV env > local config > project config > skip
+_resolve_venv() {
+    if [[ -n "${FBW_VENV:-}" ]]; then
+        echo "$FBW_VENV"
+        return
+    fi
+    # Read venv from TOML config (simple grep — no TOML parser in bash)
+    for cfg in "$SCRIPT_DIR/fbw.config.local.toml" "$SCRIPT_DIR/fbw.config.toml"; do
+        if [[ -f "$cfg" ]]; then
+            local v
+            v=$(grep -E '^\s*venv\s*=' "$cfg" 2>/dev/null | head -1 | sed 's/.*=\s*"\(.*\)".*/\1/')
+            if [[ -n "$v" ]]; then
+                echo "$v"
+                return
+            fi
+        fi
+    done
+}
+
+VENV=$(_resolve_venv)
+if [[ -n "$VENV" && -f "$VENV/bin/activate" ]]; then
+    source "$VENV/bin/activate"
 fi
 
 export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"

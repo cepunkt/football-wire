@@ -18,6 +18,8 @@ from enum import Enum
 from typing import Any
 
 from fbw.football import (
+    AttackEnd,
+    DIRECTION_SWAP_PHASES,
     MatchClock,
     MatchMinute,
     MatchPhase,
@@ -151,6 +153,53 @@ class ScoreEvent:
 
 
 @dataclass
+class DirectionEvidence:
+    """One observation supporting a team's attack direction."""
+    team_id: str
+    raw_x: float
+    event_type: str       # "shot", "offside"
+    minute: MatchMinute
+
+    @property
+    def inferred_end(self) -> AttackEnd:
+        """Which end this evidence suggests the team attacks toward."""
+        return AttackEnd.HIGH_X if self.raw_x > 50.0 else AttackEnd.LOW_X
+
+
+@dataclass
+class PlayDirection:
+    """Resolved attack directions for both teams in the current half.
+
+    Once committed, this is a match invariant that swaps at half
+    boundaries. The confidence is the number of agreeing observations
+    that produced this commitment.
+    """
+    home_end: AttackEnd
+    away_end: AttackEnd
+    confidence: int           # number of agreeing observations
+    determined_at: MatchMinute
+    phase_determined: MatchPhase
+
+    def for_team(self, team_id: str, home_team_id: str) -> AttackEnd:
+        """Get the attack end for a specific team."""
+        return self.home_end if team_id == home_team_id else self.away_end
+
+    def swapped(self) -> "PlayDirection":
+        """Return a new PlayDirection with ends swapped (for half change)."""
+        return PlayDirection(
+            home_end=self.home_end.opposite,
+            away_end=self.away_end.opposite,
+            confidence=self.confidence,
+            determined_at=self.determined_at,
+            phase_determined=self.phase_determined,
+        )
+
+    def attacks_high_x(self, team_id: str, home_team_id: str) -> bool:
+        """Whether a team attacks toward the high-X end."""
+        return self.for_team(team_id, home_team_id) == AttackEnd.HIGH_X
+
+
+@dataclass
 class MatchState:
     """The complete state of a match at a point in time.
 
@@ -165,6 +214,7 @@ class MatchState:
     events: list[StateOutput] = field(default_factory=list)
     stats: dict[str, Any] = field(default_factory=dict)  # latest stats snapshot
     annotations: list[StateOutput] = field(default_factory=list)
+    direction: PlayDirection | None = None
 
     @property
     def score(self) -> tuple[int, int]:
@@ -215,6 +265,11 @@ class MatchStateMachine:
         # Pending shot data waiting for goal merge
         self._pending_shots: dict[str, dict] = {}  # key: "minute|player_id"
 
+        # Play direction tracking
+        self.direction: PlayDirection | None = None
+        self._direction_evidence: list[DirectionEvidence] = []
+        self._direction_committed: bool = False
+
     def _team_for_id(self, team_id: str) -> TeamState | None:
         """Get team state by ID."""
         if team_id == self.home.team_id:
@@ -263,6 +318,105 @@ class MatchStateMachine:
         """Sub dedup: minute + sorted player IDs. Direction-agnostic."""
         pair = sorted([player_a, player_b])
         return f"sub|{minute.base}|{pair[0]}|{pair[1]}"
+
+    # --- Play direction inference ---
+
+    _DIRECTION_COMMIT_THRESHOLD = 2  # agreeing observations needed
+
+    def _record_direction_evidence(
+        self, team_id: str, raw_x: float, event_type: str, minute: MatchMinute,
+    ) -> StateOutput | None:
+        """Record a directional observation and try to commit.
+
+        Returns a StateOutput announcing the direction if we just
+        committed, None otherwise.
+
+        Evidence sources: shots (most reliable — taken near opponent's
+        goal) and offsides (happen in the attacking half).
+        """
+        if self._direction_committed:
+            return None
+
+        if not team_id:
+            return None
+
+        ev = DirectionEvidence(
+            team_id=team_id, raw_x=raw_x,
+            event_type=event_type, minute=minute,
+        )
+        self._direction_evidence.append(ev)
+
+        return self._try_commit_direction(minute)
+
+    def _try_commit_direction(self, minute: MatchMinute) -> StateOutput | None:
+        """Try to determine play direction from accumulated evidence.
+
+        Counts how many observations agree per team per end.
+        Commits when any team has >= threshold observations pointing
+        the same direction.
+        """
+        # Count: team_id → {AttackEnd → count}
+        counts: dict[str, dict[AttackEnd, int]] = {}
+        for ev in self._direction_evidence:
+            if ev.team_id not in counts:
+                counts[ev.team_id] = {AttackEnd.HIGH_X: 0, AttackEnd.LOW_X: 0}
+            counts[ev.team_id][ev.inferred_end] += 1
+
+        # Check if any team has enough agreeing evidence
+        for team_id, ends in counts.items():
+            for end, count in ends.items():
+                if count >= self._DIRECTION_COMMIT_THRESHOLD:
+                    return self._commit_direction(team_id, end, count, minute)
+
+        return None
+
+    def _commit_direction(
+        self, team_id: str, end: AttackEnd, confidence: int, minute: MatchMinute,
+    ) -> StateOutput:
+        """Lock in the play direction from observed evidence."""
+        is_home = (team_id == self.home.team_id)
+        home_end = end if is_home else end.opposite
+        away_end = home_end.opposite
+
+        # Account for current phase — if we're in a swap phase (2H, ET2),
+        # the first-half direction is the opposite of what we observe now.
+        # We store the CURRENT direction, and swap on transitions.
+        self.direction = PlayDirection(
+            home_end=home_end,
+            away_end=away_end,
+            confidence=confidence,
+            determined_at=minute,
+            phase_determined=self.clock.phase,
+        )
+        self._direction_committed = True
+
+        home_abbr = self.home.abbreviation
+        away_abbr = self.away.abbreviation
+        home_arrow = "→ high X" if home_end == AttackEnd.HIGH_X else "→ low X"
+        away_arrow = "→ high X" if away_end == AttackEnd.HIGH_X else "→ low X"
+
+        return StateOutput(
+            kind=OutputKind.EVENT,
+            minute=minute,
+            data={
+                "type": "direction_determined",
+                "home_end": home_end.value,
+                "away_end": away_end.value,
+                "confidence": confidence,
+                "description": (
+                    f"Play direction: {home_abbr} {home_arrow}, "
+                    f"{away_abbr} {away_arrow} "
+                    f"(inferred from {confidence} events)"
+                ),
+            },
+            trust=SourceTrust.EVENT,
+            flags=["direction"],
+        )
+
+    def _swap_direction(self) -> None:
+        """Swap play direction at half boundary."""
+        if self.direction:
+            self.direction = self.direction.swapped()
 
     # --- Apply ---
 
@@ -355,6 +509,12 @@ class MatchStateMachine:
                 if target_phase in (MatchPhase.EXTRA_FIRST, MatchPhase.EXTRA_SECOND):
                     if not self.rules.stage_allows_extra_time(self.is_knockout):
                         flags.append("extra_time_not_allowed_in_stage")
+
+                # Swap play direction at half boundaries
+                if target_phase in DIRECTION_SWAP_PHASES:
+                    self._swap_direction()
+                    if self.direction:
+                        flags.append("direction_swapped")
 
                 valid = self.clock.transition(target_phase)
                 if not valid:
@@ -710,6 +870,9 @@ class MatchStateMachine:
         same minute for the same player — if a match is found,
         the shot data is merged into the goal (enrichment) instead
         of being emitted as a separate event.
+
+        Shots with coordinates are primary evidence for play
+        direction inference.
         """
         player_id = inp.data.get("player_id", "")
         shot_data = {
@@ -718,6 +881,20 @@ class MatchStateMachine:
                       "side", "gate_x", "gate_y", "placement",
                       "confidence", "on_target")
         }
+
+        # Direction evidence: shots with coordinates
+        raw_x = inp.data.get("position_x")
+        team_id = inp.data.get("team_id", "")
+        if raw_x is not None and inp.data.get("type") not in ("save", "assist"):
+            direction_output = self._record_direction_evidence(
+                team_id=team_id, raw_x=float(raw_x),
+                event_type="shot", minute=inp.minute,
+            )
+            if direction_output:
+                # Stash direction announcement — we'll emit the shot
+                # event normally and let the consumer pick up direction
+                # from get_state().
+                self.events.append(direction_output)
 
         # Check: is there a goal at this minute for this player?
         shot_key = f"{inp.minute.base}|{player_id}"
@@ -824,6 +1001,7 @@ class MatchStateMachine:
             events=list(self.events),
             stats=dict(self.stats),
             annotations=list(self.annotations),
+            direction=self.direction,
         )
 
 

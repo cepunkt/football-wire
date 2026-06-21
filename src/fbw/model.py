@@ -63,6 +63,7 @@ class EventType(IntEnum):
     OFFSIDE = 15
     CORNER = 16
     FOUL = 18
+    OWN_GOAL = 34
     PENALTY_GOAL = 41
     SAVE = 57
     INJURY = 70
@@ -75,7 +76,7 @@ class EventType(IntEnum):
 
     @property
     def is_goal(self) -> bool:
-        return self in (EventType.GOAL, EventType.PENALTY_GOAL)
+        return self in (EventType.GOAL, EventType.PENALTY_GOAL, EventType.OWN_GOAL)
 
     @property
     def is_card(self) -> bool:

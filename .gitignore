@@ -10,10 +10,11 @@ build/
 .venv/
 venv/
 
-# Runtime data — raw API dumps and processed derivatives
+# Runtime data — raw API dumps, processed derivatives, and feed logs
 # These are generated, not source. Reproduce via daemon + backfill.
 data/raw/
 data/processed/
+data/feeds/
 
 # Aggregate data — combined from multiple sources including third-party
 # May contain FIFA stats, news data, manual observations. Not publishable.

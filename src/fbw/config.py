@@ -35,6 +35,7 @@ class SourceConfig:
 class PathsConfig:
     """Data directory paths. Derived from data_dir."""
     data_dir: Path = field(default_factory=lambda: Path("data"))
+    venv: str = ""              # path to Python venv (for shell wrappers)
 
     @property
     def raw_dir(self) -> Path:
@@ -145,6 +146,8 @@ def _apply_toml(config: Config, data: dict) -> None:
         paths = data["paths"]
         if "data_dir" in paths:
             config.paths.data_dir = Path(paths["data_dir"])
+        if "venv" in paths:
+            config.paths.venv = paths["venv"]
 
     # [source] or [source.fifa]
     source_data = data.get("source", {})

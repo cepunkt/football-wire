@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 
 from fbw.state import (
     MatchStateMachine, TeamState, StateInput, StateOutput,
-    InputCategory, OutputKind, SourceTrust,
+    InputCategory, OutputKind, SourceTrust, PlayDirection,
 )
-from fbw.football import MatchMinute, MatchPhase
+from fbw.football import AttackEnd, MatchMinute, MatchPhase
 from fbw.tournament import load_tournament
 from pathlib import Path
 
@@ -316,3 +316,152 @@ class TestInterruptions:
         sm.apply(_make_input(InputCategory.MATCH_INTERRUPT, "27'",
                              {"action": "resume"}))
         assert sm.clock.phase == MatchPhase.FIRST_HALF
+
+
+class TestPlayDirection:
+    """Play direction inference from shot coordinates."""
+
+    def _shot_input(self, minute, team_id, raw_x, raw_y=50.0):
+        return _make_input(InputCategory.ATTEMPT, minute, {
+            "type": "shot", "player_id": "p1",
+            "team_id": team_id,
+            "position_x": raw_x, "position_y": raw_y,
+        })
+
+    def test_no_direction_before_evidence(self, rules):
+        """Direction is None until enough shots observed."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        assert sm.direction is None
+
+    def test_single_shot_not_enough(self, rules):
+        """One shot is below commit threshold."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("4'", "home_id", 85.0))
+        assert sm.direction is None
+
+    def test_two_agreeing_shots_commits(self, rules):
+        """Two shots from same team toward same end → direction committed."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        sm.apply(self._shot_input("4'", "home_id", 95.0))
+        assert sm.direction is not None
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+        assert sm.direction.away_end == AttackEnd.LOW_X
+        assert sm.direction.confidence == 2
+
+    def test_direction_from_away_team(self, rules):
+        """Direction can also be inferred from away team shots."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("10'", "away_id", 15.0))
+        sm.apply(self._shot_input("12'", "away_id", 8.0))
+        assert sm.direction is not None
+        assert sm.direction.away_end == AttackEnd.LOW_X
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+
+    def test_mixed_team_evidence(self, rules):
+        """One shot from each team, both agreeing on layout."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        # Home shoots toward high X
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        # Away shoots toward low X — same layout
+        sm.apply(self._shot_input("5'", "away_id", 12.0))
+        # Each team has 1 observation — neither reaches threshold alone
+        assert sm.direction is None
+        # Another home shot tips it
+        sm.apply(self._shot_input("8'", "home_id", 82.0))
+        assert sm.direction is not None
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+
+    def test_direction_swaps_at_halftime(self, rules):
+        """Direction reverses when second half starts."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        sm.apply(self._shot_input("4'", "home_id", 95.0))
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+
+        # Half-time
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "45'", {"action": "end"}))
+        # Second half
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "46'", {"action": "start"}))
+        assert sm.direction.home_end == AttackEnd.LOW_X
+        assert sm.direction.away_end == AttackEnd.HIGH_X
+
+    def test_direction_swaps_for_extra_time(self, rules):
+        """Direction swaps at every half boundary including ET."""
+        sm = MatchStateMachine(
+            match_id="test",
+            home=TeamState("home_id", "HOM",
+                           on_pitch={"p1", "p2", "p3", "p4", "p5",
+                                     "p6", "p7", "p8", "p9", "p10", "p11"}),
+            away=TeamState("away_id", "AWY",
+                           on_pitch={"a1", "a2", "a3", "a4", "a5",
+                                     "a6", "a7", "a8", "a9", "a10", "a11"}),
+            rules=rules,
+            is_knockout=True,
+        )
+        # 1H: home → HIGH_X
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        sm.apply(self._shot_input("4'", "home_id", 95.0))
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+
+        # 2H: swap → home → LOW_X
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "45'", {"action": "end"}))
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "46'", {"action": "start"}))
+        assert sm.direction.home_end == AttackEnd.LOW_X
+
+        # ET1: swap → home → HIGH_X (same as 1H)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "90'", {"action": "end"}))
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "91'",
+                             {"action": "start", "phase": "ET1"}))
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+
+        # ET2: swap → home → LOW_X (same as 2H)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "105'", {"action": "end"}))
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "106'",
+                             {"action": "start", "phase": "ET2"}))
+        assert sm.direction.home_end == AttackEnd.LOW_X
+
+    def test_saves_dont_contribute_evidence(self, rules):
+        """Saves should not be used for direction inference."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        # Two saves — should not commit direction
+        sm.apply(_make_input(InputCategory.ATTEMPT, "10'", {
+            "type": "save", "team_id": "home_id",
+            "position_x": 5.0, "position_y": 50.0,
+        }))
+        sm.apply(_make_input(InputCategory.ATTEMPT, "15'", {
+            "type": "save", "team_id": "home_id",
+            "position_x": 8.0, "position_y": 45.0,
+        }))
+        assert sm.direction is None
+
+    def test_direction_in_get_state(self, rules):
+        """Direction is exposed through get_state()."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        sm.apply(self._shot_input("4'", "home_id", 95.0))
+        state = sm.get_state()
+        assert state.direction is not None
+        assert state.direction.home_end == AttackEnd.HIGH_X
+
+    def test_direction_not_recommitted_after_lock(self, rules):
+        """Once committed, new shots don't change the direction."""
+        sm = _make_sm(rules)
+        sm.apply(_make_input(InputCategory.PERIOD_CHANGE, "", {"action": "start"}))
+        sm.apply(self._shot_input("2'", "home_id", 88.0))
+        sm.apply(self._shot_input("4'", "home_id", 95.0))
+        assert sm.direction.home_end == AttackEnd.HIGH_X
+        # Contradictory shots after commitment
+        sm.apply(self._shot_input("30'", "home_id", 10.0))
+        sm.apply(self._shot_input("32'", "home_id", 15.0))
+        # Direction unchanged
+        assert sm.direction.home_end == AttackEnd.HIGH_X

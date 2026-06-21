@@ -4,9 +4,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ -f "/opt/ws-venvs/ml/bin/activate" ]]; then
-    source /opt/ws-venvs/ml/bin/activate
-fi
+_resolve_venv() {
+    if [[ -n "${FBW_VENV:-}" ]]; then echo "$FBW_VENV"; return; fi
+    for cfg in "$SCRIPT_DIR/fbw.config.local.toml" "$SCRIPT_DIR/fbw.config.toml"; do
+        if [[ -f "$cfg" ]]; then
+            local v; v=$(grep -E '^\s*venv\s*=' "$cfg" 2>/dev/null | head -1 | sed 's/.*=\s*"\(.*\)".*/\1/')
+            if [[ -n "$v" ]]; then echo "$v"; return; fi
+        fi
+    done
+}
+
+VENV=$(_resolve_venv)
+if [[ -n "$VENV" && -f "$VENV/bin/activate" ]]; then source "$VENV/bin/activate"; fi
 
 export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 

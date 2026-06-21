@@ -926,6 +926,7 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
         sm=sm,
         events_path=raw_events_path,
         enrichments_path=raw_enrichments_path,
+        match_path=raw_match_path,
         match_data=raw_match,
         delay=delay,
         cycle_interval=cycle_interval,
@@ -941,10 +942,12 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
     watcher = SMFileChangeFlag(
         raw_events_path.name,
         raw_enrichments_path.name,
+        raw_match_path.name,
     )
     observer = Observer()
     observer.schedule(watcher, str(config.paths.raw_events_dir), recursive=False)
     observer.schedule(watcher, str(config.paths.raw_enrichments_dir), recursive=False)
+    observer.schedule(watcher, str(config.paths.raw_matches_dir), recursive=False)
     observer.start()
 
     try:
@@ -953,7 +956,8 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
             changed = watcher.consume()
             ev_changed = raw_events_path.name in changed
             en_changed = raw_enrichments_path.name in changed
-            engine.run_cycle(ev_changed, en_changed)
+            match_changed = raw_match_path.name in changed
+            engine.run_cycle(ev_changed, en_changed, match_changed)
 
             # Check for full time
             live = read_live(config)
@@ -982,8 +986,8 @@ def main():
     parser.add_argument("--delay", type=int, help="Delay seconds (enrichment + TV sync)")
     parser.add_argument("--cycle", type=int, help="Cycle interval seconds (default 10)")
     parser.add_argument("--snapshot", action="store_true", help="One-shot status")
-    parser.add_argument("--sm", action="store_true",
-                        help="Use state machine engine (experimental)")
+    parser.add_argument("--legacy", action="store_true",
+                        help="Use legacy feed engine (pre-state-machine)")
 
     args = parser.parse_args()
     config = init_config(args.config)
@@ -1003,10 +1007,10 @@ def main():
             sys.exit(1)
         print(f"Auto-detected: #{match_id}")
 
-    if args.sm:
-        cmd_watch_sm(config, match_id, delay=delay, cycle_interval=cycle)
-    else:
+    if args.legacy:
         cmd_watch(config, match_id, delay=delay, cycle_interval=cycle)
+    else:
+        cmd_watch_sm(config, match_id, delay=delay, cycle_interval=cycle)
 
 
 if __name__ == "__main__":

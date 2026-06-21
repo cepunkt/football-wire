@@ -74,6 +74,37 @@ PLAYING_PHASES = frozenset({
     MatchPhase.EXTRA_SECOND,
 })
 
+
+# --- Play direction ---
+
+class AttackEnd(Enum):
+    """Which end of the pitch a team attacks toward.
+
+    The API coordinate system is fixed (camera perspective).
+    Teams swap ends at every half boundary — this is a sport
+    invariant, not a data convention.
+
+    HIGH_X = attacking toward X=100 (right side of camera)
+    LOW_X  = attacking toward X=0   (left side of camera)
+    """
+    HIGH_X = "high_x"
+    LOW_X = "low_x"
+
+    @property
+    def opposite(self) -> "AttackEnd":
+        return AttackEnd.LOW_X if self == AttackEnd.HIGH_X else AttackEnd.HIGH_X
+
+
+# Phases where teams swap ends on entry.
+# Every playing phase after 1H involves a swap from the previous:
+#   1H (initial) → swap → 2H → swap → ET1 → swap → ET2
+# Result: 1H and ET1 share direction, 2H and ET2 share direction.
+DIRECTION_SWAP_PHASES = frozenset({
+    MatchPhase.SECOND_HALF,
+    MatchPhase.EXTRA_FIRST,
+    MatchPhase.EXTRA_SECOND,
+})
+
 # Which phases are breaks (clock stopped, no play)
 BREAK_PHASES = frozenset({
     MatchPhase.HALF_TIME,
