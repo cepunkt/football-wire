@@ -256,13 +256,20 @@ def _format_event(
     if event_type in ("yellow", "red", "second_yellow", "second_yellow_red"):
         abbr = _team_abbr(sm, team_id)
         name = player_name(pid)
+        pos = _position_suffix(data, direction, team_id, home_id, "foul")
         card_map = {
             "yellow": "YELLOW", "red": "RED",
             "second_yellow": "SECOND YELLOW/RED",
             "second_yellow_red": "SECOND YELLOW/RED",
         }
         label = card_map.get(event_type, event_type.upper())
-        return f"{time}{label:<24}{abbr} | {name} {score_str}"
+        card_line = f"{time}{label:<24}{abbr} | {name}{pos} {score_str}"
+
+        # Cards are bookable fouls — free kick context applies
+        fk_line = _format_free_kick(data, direction, team_id, home_id, sm)
+        if fk_line:
+            return f"{card_line}\n{time}  → FREE KICK             {fk_line}"
+        return card_line
 
     # --- Fouls ---
     if event_type == "foul":
