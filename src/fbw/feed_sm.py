@@ -385,6 +385,38 @@ class SMFeedEngine:
                             self._enrichment_cache[eid] = {}
                         self._enrichment_cache[eid][fld] = new_val
 
+                        # Direction evidence from enriched coordinates
+                        if fld in ("PositionX", "PositionY"):
+                            cache = self._enrichment_cache.get(eid, {})
+                            px = cache.get("PositionX")
+                            py = cache.get("PositionY")
+                            if px is not None and py is not None:
+                                # Find the event type and team from buffer or emitted
+                                ev_data = None
+                                for buf in self._buffer:
+                                    if buf.source_id == eid:
+                                        ev_data = buf.output.data
+                                        break
+                                if not ev_data and eid in self._emitted_ids:
+                                    ev_data = self._emitted_ids[eid].data
+                                if ev_data:
+                                    etype = ev_data.get("type", "")
+                                    team_id = ev_data.get("team_id", "")
+                                    if etype in ("shot", "corner", "offside") and team_id:
+                                        from .football import MatchMinute
+                                        minute = MatchMinute(base=0, added=0, raw="")
+                                        if hasattr(ev_data, 'get'):
+                                            # Try to get minute from enrichment
+                                            m_str = enrichment.get("minute", "")
+                                            if m_str:
+                                                minute = MatchMinute.from_notation(m_str)
+                                        direction_out = self.sm._record_direction_evidence(
+                                            team_id=team_id, raw_x=float(px),
+                                            event_type=etype, minute=minute,
+                                        )
+                                        if direction_out:
+                                            self.sm.side_outputs.append(direction_out)
+
                         # Apply to buffered events (not yet emitted)
                         for buf in self._buffer:
                             if buf.source_id == eid:
@@ -399,6 +431,8 @@ class SMFeedEngine:
                     except json.JSONDecodeError:
                         pass
                 self.enrichments_pos = f.tell()
+                # Drain any direction evidence from enrichments
+                self._drain_side_outputs()
         except OSError:
             pass
 
