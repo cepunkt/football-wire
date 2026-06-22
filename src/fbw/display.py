@@ -517,6 +517,19 @@ def format_enrichment_correction(
         return (f">> ENRICHED: {minute_str}  {marker:<20}"
                 f"{abbr} | {name} | ({float(px):.0f},{float(py):.0f})")
 
+    # Gate coordinate enrichment (shot placement arriving late)
+    elif field in ("GoalGatePositionX", "GoalGatePositionY"):
+        gx = cache.get("GoalGatePositionX")
+        gy = cache.get("GoalGatePositionY")
+        if gx is None or gy is None:
+            return None
+        gp = GoalPlacement(raw_x=float(gx), raw_y=float(gy))
+        marker = event_type.upper() if event_type else "SHOT"
+        return (f">> ENRICHED: {minute_str}  {marker:<20}"
+                f"{abbr} | {name} "
+                f"| placed {gp.height}, {gp.side} "
+                f"({gp.offset_m:.1f}m off centre, {gp.height_m:.1f}m high)")
+
     # Description change
     elif field == "EventDescription":
         desc = cache.get("EventDescription", "")

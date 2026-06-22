@@ -469,6 +469,13 @@ class SMFeedEngine:
             self._emitted_fields[eid].add("PositionX")
             self._emitted_fields[eid].add("PositionY")
 
+        if field in ("GoalGatePositionX", "GoalGatePositionY"):
+            cache = self._enrichment_cache.get(eid, {})
+            if cache.get("GoalGatePositionX") is None or cache.get("GoalGatePositionY") is None:
+                return
+            self._emitted_fields[eid].add("GoalGatePositionX")
+            self._emitted_fields[eid].add("GoalGatePositionY")
+
         # Delegate formatting to display module
         cache = self._enrichment_cache.get(eid, {})
         text = format_enrichment_correction(original, field, cache, self.sm)
