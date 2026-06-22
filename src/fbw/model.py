@@ -160,10 +160,12 @@ class Minute:
 # --- Coordinates ---
 
 # FIFA World Cup standard pitch dimensions
-PITCH_LENGTH = 105.0   # metres
-PITCH_WIDTH = 68.0     # metres
-GOAL_WIDTH_M = 7.32    # metres (post to post)
-GOAL_HEIGHT_M = 2.44   # metres (ground to crossbar)
+PITCH_LENGTH = 105.0           # metres
+PITCH_WIDTH = 68.0             # metres
+GOAL_WIDTH_M = 7.32            # metres (post to post)
+GOAL_HEIGHT_M = 2.44           # metres (ground to crossbar)
+SIX_YARD_BOX_WIDTH_M = 5.5     # metres (each side of goal)
+SIX_YARD_BOX_DEPTH_M = 5.5     # metres (from goal line)
 
 
 @dataclass(frozen=True)
@@ -242,41 +244,66 @@ class ShotPosition:
 class GoalPlacement:
     """Where the ball hit the goal frame. From API GoalGatePosition.
 
-    Coordinates are from the attacker's perspective:
-      X: 0-100 across the goal mouth (post to post, 7.32m)
-      Y: 0-100 from ground to crossbar (2.44m)
+    Coordinates map to the 6-yard box from the attacker's perspective:
+      X: 0-100 across the 6-yard box width (18.32m)
+         Posts at X≈30 and X≈70. Inside goal = 30-70.
+      Y: 0-100 from ground up to 6 yards height (5.49m)
+         Crossbar at Y≈44.5. In frame = <44.5.
+
+    Calibrated from 226 shots across 12 WC2026 matches:
+      - 28/28 goals fall within X=30-70 (inside posts)
+      - All goals Y<44.5 (under crossbar)
+      - Salah miss Y=47.4 → 2.60m = 16cm over bar (confirmed by eye)
+      - Messi penalty miss X=70.3 → just wide of right post (confirmed)
     """
     raw_x: float
     raw_y: float
 
+    # 6-yard box coordinate system
+    _BOX_WIDTH = SIX_YARD_BOX_WIDTH_M * 2 + GOAL_WIDTH_M  # 18.32m
+    _BOX_HEIGHT = SIX_YARD_BOX_DEPTH_M                     # 5.5m (≈6 yards)
+    _POST_LEFT = SIX_YARD_BOX_WIDTH_M / _BOX_WIDTH * 100  # ~30%
+    _POST_RIGHT = (SIX_YARD_BOX_WIDTH_M + GOAL_WIDTH_M) / _BOX_WIDTH * 100  # ~70%
+    _CROSSBAR = GOAL_HEIGHT_M / _BOX_HEIGHT * 100          # ~44.4%
+
     @property
     def offset_m(self) -> float:
         """Distance from centre of goal in metres."""
-        return abs(self.raw_x - 50) / 100 * GOAL_WIDTH_M
+        return abs(self.raw_x - 50) / 100 * self._BOX_WIDTH
 
     @property
     def height_m(self) -> float:
         """Height from ground in metres."""
-        return self.raw_y / 100 * GOAL_HEIGHT_M
+        return self.raw_y / 100 * self._BOX_HEIGHT
+
+    @property
+    def in_goal(self) -> bool:
+        """Whether the ball entered the goal frame."""
+        return self._POST_LEFT <= self.raw_x <= self._POST_RIGHT and self.raw_y <= self._CROSSBAR
 
     @property
     def height(self) -> str:
-        if self.raw_y < 15:
+        if self.raw_y > self._CROSSBAR:
+            return "over"
+        elif self.raw_y < 15:
             return "low"
-        elif self.raw_y > 50:
+        elif self.raw_y > 35:
             return "high"
         return "mid-height"
 
     @property
     def side(self) -> str:
-        """Goal gate side from attacker's perspective.
+        """Side from attacker's perspective within the 6-yard box.
 
-        X runs 0-100 across the goal mouth (post to post, 7.32m).
-        Centre band is the middle 20% (~1.5m either side of centre).
+        Posts at X≈30 (left) and X≈70 (right).
         """
-        if self.raw_x < 40:
+        if self.raw_x < self._POST_LEFT:
+            return "wide left"
+        elif self.raw_x > self._POST_RIGHT:
+            return "wide right"
+        elif self.raw_x < 45:
             return "left"
-        elif self.raw_x > 60:
+        elif self.raw_x > 55:
             return "right"
         return "centre"
 
