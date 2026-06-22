@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# fbw-capture — screenshot the stream monitor
+# Run from HOST, not container (needs X11 display access).
+#
+# Usage:
+#   fbw-capture <match_id>              # capture right monitor
+#   fbw-capture <match_id> "73' GOAL"   # capture with label
+#
+# Requires: maim (pacman -S maim)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MATCH_ID="${1:-unknown}"
+LABEL="${2:-}"
+
+CAPTURE_DIR="$SCRIPT_DIR/data/captures/$MATCH_ID"
+mkdir -p "$CAPTURE_DIR"
+
+TIMESTAMP=$(date +%H%M%S)
+FILENAME="${TIMESTAMP}"
+if [[ -n "$LABEL" ]]; then
+    # Sanitise label for filename
+    SAFE_LABEL=$(echo "$LABEL" | tr ' /:|' '_' | tr -cd '[:alnum:]_-')
+    FILENAME="${TIMESTAMP}_${SAFE_LABEL}"
+fi
+
+# Right monitor: DP-1 at 3840x2160+3840+0
+# Edit geometry if your layout differs.
+GEOMETRY="3840x2160+3840+0"
+
+maim -g "$GEOMETRY" "$CAPTURE_DIR/${FILENAME}.png"
+echo "Captured: $CAPTURE_DIR/${FILENAME}.png"
