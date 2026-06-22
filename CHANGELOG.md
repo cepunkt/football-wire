@@ -34,7 +34,7 @@ Live-tested across ESP 4-0 KSA and BEL 0-0 IRN. Architecture cleanup.
 
 ## 0.2.0 (2026-06-21)
 
-First public release. Complete rebuild from the wc26 companion PoC.
+First public release. Complete rebuild from the wc26 buddy PoC.
 
 ### Architecture
 - State machine (`MatchStateMachine`) as central source of truth for all match data
@@ -83,11 +83,11 @@ First public release. Complete rebuild from the wc26 companion PoC.
 ### Documentation
 - Reverse-engineered FIFA API reference (20 event types documented)
 - ESPN endpoint documentation
-- Usage guides for humans and LM companions
+- Usage guides for humans and LM buddys
 - Example local config
 
 ## 0.1.0 (2026-06-17)
 
-Internal PoC (wc26 companion). Daemon/client architecture built live during
+Internal PoC (wc26 buddy). Daemon/client architecture built live during
 England 4-2 Croatia. 25 commits across 6 matches. Deprecated in favour of
 football-wire rebuild.

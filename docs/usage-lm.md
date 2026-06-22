@@ -186,7 +186,7 @@ PYTHONPATH=src python -m fbw.query groups
 
 ## Three-Source Sensor
 
-The best match companion uses three sources:
+The best match buddy uses three sources:
 1. **Feed** — event data, coordinates, stats blocks
 2. **Lore files** — team narratives, group context, pre-match reports
 3. **The user** — watching on TV, sees what the API can't

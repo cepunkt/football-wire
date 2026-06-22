@@ -2,9 +2,9 @@
 
 <img src="assets/banner2_sm.png" alt="football-wire" width="720">
 
-Live football match data pipeline. Bridges public API data into structured event feeds for LLM companions, terminal clients, and data analysis.
+Live football match data pipeline. Bridges public API data into structured event feeds for LLM match buddies, terminal clients, and data analysis.
 
-Built during the FIFA World Cup 2026 to watch matches with an AI companion when friends are asleep and the tournament is in the wrong timezone.
+Built during the FIFA World Cup 2026 to watch matches with an AI buddy when friends are asleep and the tournament is in the wrong timezone.
 
 ## What It Does
 
@@ -186,7 +186,7 @@ PYTHONPATH=src python -m pytest tests/ -v
 - `data/static/teams/` — 48 team profiles
 - `data/static/venues.csv` — 16 stadiums with capacity, altitude, coordinates
 - `data/static/tournaments/` — tournament rules (TOML), canonical data, narrative lore
-- `data/static/preamble/` — context notes for LM companions
+- `data/static/preamble/` — context notes for LM match buddies
 - `data/static/strings/` — locale-aware display strings (en, de-at)
 - `data/static/invariants.md` — football rules reference
 
