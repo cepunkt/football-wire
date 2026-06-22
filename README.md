@@ -151,9 +151,11 @@ Personal overrides: copy `fbw.config.local.example.toml` to `fbw.config.local.to
 
 Environment overrides: `FBW_DATA_DIR`, `FBW_POLL_INTERVAL`, `FBW_DELAY`, `FBW_CONFIG`, `FBW_VENV`.
 
-## LM Companion Usage
+## LM Buddy Usage
 
 The primary use case: an LLM watches a football match alongside you via a harness with Monitor support (e.g. Claude Code).
+
+<img src="assets/screenshots/nzl-egy-session_sm.png" alt="Live session: NZL vs EGY" width="600">
 
 ```bash
 # In Monitor:
