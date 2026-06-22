@@ -44,16 +44,16 @@ source .venv/bin/activate
 ./fbw-watch
 
 # Watch a match (terminal)
-./fbw-watch GER-CIV
+./fbw-watch ARG-AUT
 
 # Feed a match to an LLM (Claude Code Monitor, etc.)
-./fbw-watch --delay 30 GER-CIV
+./fbw-watch --delay 30 ARG-AUT
 
 # Query scores and standings
 ./fbw-query groups
-./fbw-query group GER
+./fbw-query group AUT
 ./fbw-query scorers
-./fbw-query player Musiala
+./fbw-query player Alaba
 ```
 
 Or without shell wrappers:
