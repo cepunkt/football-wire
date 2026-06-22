@@ -1,6 +1,6 @@
 # football-wire
 
-<img src="assets/banner_sm.png" alt="football-wire" width="720">
+<img src="assets/banner2_sm.png" alt="football-wire" width="720">
 
 Live football match data pipeline. Bridges public API data into structured event feeds for LLM companions, terminal clients, and data analysis.
 
