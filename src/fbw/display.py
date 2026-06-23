@@ -505,19 +505,22 @@ def format_enrichment_correction(
         if px is None or py is None:
             return None
 
-        # Use direction-aware formatting for fouls/offsides
-        if event_type in ("foul", "offside"):
+        # Use direction-aware formatting for fouls/offsides/cards
+        _FOUL_LIKE = ("foul", "offside", "yellow", "red",
+                       "second_yellow", "second_yellow_red")
+        if event_type in _FOUL_LIKE:
             pos = format_pitch_position(
                 float(px), float(py),
                 sm.direction, team_id, sm.home.team_id,
-                event_type=event_type,
+                event_type="foul" if event_type not in ("offside",) else "offside",
             )
             marker = event_type.upper()
             enriched_line = (f">> ENRICHED: {minute_str}  {marker:<20}"
                             f"{abbr} | {name} | {pos}")
 
-            # Add free kick follow-up for fouls (same as live events)
-            if event_type == "foul":
+            # Add free kick follow-up for fouls and cards (bookable fouls)
+            if event_type in ("foul", "yellow", "red",
+                              "second_yellow", "second_yellow_red"):
                 fk_data = dict(original.data)
                 fk_data["position_x"] = float(px)
                 fk_data["position_y"] = float(py)
