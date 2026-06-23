@@ -151,10 +151,12 @@ def _format_corner_position(
 def format_shot(data: dict) -> str:
     """Format shot position and goal placement data."""
     parts = []
+    shooter_side = None
     px = data.get("position_x")
     py = data.get("position_y")
     if px is not None and py is not None:
         sp = ShotPosition.from_raw(float(px), float(py))
+        shooter_side = sp.side
         parts.append(
             f"from {sp.distance_m:.0f}m, {sp.zone}, {sp.side} "
             f"({float(px):.0f},{float(py):.0f})"
@@ -164,8 +166,13 @@ def format_shot(data: dict) -> str:
     gy = data.get("gate_y")
     if gx is not None and gy is not None:
         gp = GoalPlacement(raw_x=float(gx), raw_y=float(gy))
+        # Use near/far post when shooter side is known
+        if shooter_side:
+            side_desc = gp.side_relative(shooter_side)
+        else:
+            side_desc = gp.side
         parts.append(
-            f"placed {gp.height}, {gp.side} "
+            f"placed {gp.height}, {side_desc} "
             f"({gp.offset_m:.1f}m off centre, {gp.height_m:.1f}m high)"
         )
 
@@ -192,7 +199,7 @@ def format_event(output: StateOutput, sm: MatchStateMachine) -> str | None:
     if output.kind == OutputKind.EVENT:
         return _format_event(time, event_type, data, score_str, sm, flags)
     elif output.kind == OutputKind.CORRECTION:
-        return _format_correction(time, event_type, data, score_str, sm)
+        return _format_correction(time, event_type, data, score_str, sm, output)
     elif output.kind == OutputKind.STATS:
         return None  # handled separately by stats block
     elif output.kind == OutputKind.ANNOTATION:
@@ -443,14 +450,24 @@ def _position_suffix(
 
 def _format_correction(
     time: str, corr_type: str, data: dict, score_str: str,
-    sm: MatchStateMachine,
+    sm: MatchStateMachine, output: StateOutput | None = None,
 ) -> str | None:
     """Format a CORRECTION-kind StateOutput."""
     if corr_type == "goal_enriched":
         shot_data = data.get("shot_data", {})
         shot_str = format_shot(shot_data)
         name = player_name(data.get("player_id", ""))
-        return f"{time}>>GOAL<< (ENRICHED)     {name} {shot_str}{score_str}"
+        abbr = _team_abbr(sm, data.get("team_id", ""))
+        minute_str = output.minute.display if output and output.minute.base > 0 else ""
+        if name:
+            return (f">> ENRICHED: {minute_str}  GOAL                "
+                    f"{abbr} | {name} {shot_str}{score_str}")
+        return (f">> ENRICHED: {minute_str}  GOAL                "
+                f"{abbr} | {shot_str}{score_str}")
+    elif corr_type == "goal_not_confirmed":
+        # API re-sent a goal event but state machine score disagrees
+        return (f"{time}>> INFO: Goal event not confirmed by match data. "
+                f"Score remains: {score_str}")
     elif corr_type == "goal_voided":
         name = player_name(data.get("player_id", ""))
         reason = data.get("reason", "")
@@ -496,8 +513,21 @@ def format_enrichment_correction(
                 event_type=event_type,
             )
             marker = event_type.upper()
-            return (f">> ENRICHED: {minute_str}  {marker:<20}"
-                    f"{abbr} | {name} | {pos}")
+            enriched_line = (f">> ENRICHED: {minute_str}  {marker:<20}"
+                            f"{abbr} | {name} | {pos}")
+
+            # Add free kick follow-up for fouls (same as live events)
+            if event_type == "foul":
+                fk_data = dict(original.data)
+                fk_data["position_x"] = float(px)
+                fk_data["position_y"] = float(py)
+                fk_line = _format_free_kick(
+                    fk_data, sm.direction, team_id, sm.home.team_id, sm)
+                if fk_line:
+                    time_pad = f"{'':>12}"
+                    enriched_line += f"\n{time_pad}  → FREE KICK             {fk_line}"
+
+            return enriched_line
 
         # Use shot formatting for shots/goals/saves
         elif event_type in ("shot", "goal", "save"):

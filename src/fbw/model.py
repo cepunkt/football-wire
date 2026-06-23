@@ -167,6 +167,16 @@ GOAL_HEIGHT_M = 2.44           # metres (ground to crossbar)
 SIX_YARD_BOX_WIDTH_M = 5.5     # metres (each side of goal)
 SIX_YARD_BOX_DEPTH_M = 5.5     # metres (from goal line)
 
+# Gate coordinate frame (calibrated from WC2026 match data)
+# X: 0-100 across 6-yard box width. Posts at X≈30 and X≈70.
+# Y: 0-100 from ground. Crossbar at Y≈45.2.
+# Calibrated from:
+#   - Haaland crossbar hit NOR-SEN 58': Y=45.22 → 2.44m (confirmed by eye)
+#   - Balogun post hit PAR-USA 45'+5': Y=42.44 → 2.29m = 15cm below bar (confirmed)
+#   - 28/28 goals within X=30-70 (inside posts)
+GATE_FRAME_WIDTH_M = SIX_YARD_BOX_WIDTH_M * 2 + GOAL_WIDTH_M  # 18.32m
+GATE_FRAME_HEIGHT_M = 5.4      # calibrated, not a pitch dimension
+
 
 @dataclass(frozen=True)
 class ShotPosition:
@@ -181,7 +191,7 @@ class ShotPosition:
     raw_y: float
     norm_x: float
     norm_y: float
-    distance_m: float       # distance from goal centre in metres
+    distance_m: float       # distance to nearest point of goal frame
     depth_m: float          # perpendicular distance from goal line
 
     @classmethod
@@ -194,8 +204,17 @@ class ShotPosition:
             nx, ny = x, 100.0 - y          # keep X, flip Y (facing opposite)
 
         depth_m = nx / 100.0 * PITCH_LENGTH
-        dy_m = (ny - 50.0) / 100.0 * PITCH_WIDTH
-        distance_m = (depth_m ** 2 + dy_m ** 2) ** 0.5
+        dy_m = abs((ny - 50.0) / 100.0 * PITCH_WIDTH)
+        half_goal = GOAL_WIDTH_M / 2   # 3.66m
+
+        # Distance to nearest point of the goal frame:
+        # - Inside goal width: straight line = depth
+        # - Outside goal width: triangle to nearest post
+        if dy_m <= half_goal:
+            distance_m = depth_m
+        else:
+            excess = dy_m - half_goal
+            distance_m = (depth_m ** 2 + excess ** 2) ** 0.5
 
         return cls(raw_x=x, raw_y=y, norm_x=nx, norm_y=ny,
                    distance_m=distance_m, depth_m=depth_m)
@@ -247,43 +266,105 @@ class GoalPlacement:
     Coordinates map to the 6-yard box from the attacker's perspective:
       X: 0-100 across the 6-yard box width (18.32m)
          Posts at X≈30 and X≈70. Inside goal = 30-70.
-      Y: 0-100 from ground up to 6 yards height (5.49m)
-         Crossbar at Y≈44.5. In frame = <44.5.
+      Y: 0-100 from ground up to gate frame height (5.4m, calibrated)
+         Crossbar at Y≈45.2. In frame = <45.2.
 
-    Calibrated from 226 shots across 12 WC2026 matches:
+    Note: gate Y on goals may reflect net impact, not line crossing.
+    A low slide-in that hits the roof of the net will show high Y.
+    Only non-goal shots and confirmed crossbar hits are reliable
+    for crossbar calibration.
+
+    Calibrated from WC2026 match data:
       - 28/28 goals fall within X=30-70 (inside posts)
-      - All goals Y<44.5 (under crossbar)
-      - Salah miss Y=47.4 → 2.60m = 16cm over bar (confirmed by eye)
+      - Haaland crossbar hit NOR-SEN 58' Y=45.22 → 2.44m (confirmed by eye)
+      - Balogun post hit PAR-USA 45'+5' Y=42.44 → 2.29m = 15cm below bar (confirmed)
+      - Monteiro over URU-CPV 59' Y=47.21 → 2.55m = 11cm over bar (control)
       - Messi penalty miss X=70.3 → just wide of right post (confirmed)
+
+    Bad data (excluded from calibration):
+      - Haaland slide-in goal IRQ-NOR 29' Y=45.72: ball crossed line low,
+        rose into roof of net. Gate Y reflects net impact, not line crossing.
     """
     raw_x: float
     raw_y: float
 
-    # 6-yard box coordinate system
-    _BOX_WIDTH = SIX_YARD_BOX_WIDTH_M * 2 + GOAL_WIDTH_M  # 18.32m
-    _BOX_HEIGHT = SIX_YARD_BOX_DEPTH_M                     # 5.5m (≈6 yards)
-    _POST_LEFT = SIX_YARD_BOX_WIDTH_M / _BOX_WIDTH * 100  # ~30%
-    _POST_RIGHT = (SIX_YARD_BOX_WIDTH_M + GOAL_WIDTH_M) / _BOX_WIDTH * 100  # ~70%
-    _CROSSBAR = GOAL_HEIGHT_M / _BOX_HEIGHT * 100          # ~44.4%
+    # Gate coordinate frame (calibrated from match data)
+    _FRAME_WIDTH = GATE_FRAME_WIDTH_M                       # 18.32m
+    _FRAME_HEIGHT = GATE_FRAME_HEIGHT_M                     # 5.4m (calibrated)
+    _POST_LEFT = SIX_YARD_BOX_WIDTH_M / _FRAME_WIDTH * 100   # ~30%
+    _POST_RIGHT = (SIX_YARD_BOX_WIDTH_M + GOAL_WIDTH_M) / _FRAME_WIDTH * 100  # ~70%
+    _CROSSBAR = GOAL_HEIGHT_M / _FRAME_HEIGHT * 100          # ~45.2%
+
+    # Proximity thresholds
+    _NEAR_POST_M = 0.25           # metres — "close to post"
+    _NEAR_BAR_M = 0.20            # metres — "close to crossbar"
 
     @property
     def offset_m(self) -> float:
         """Distance from centre of goal in metres."""
-        return abs(self.raw_x - 50) / 100 * self._BOX_WIDTH
+        return abs(self.raw_x - 50) / 100 * self._FRAME_WIDTH
 
     @property
     def height_m(self) -> float:
         """Height from ground in metres."""
-        return self.raw_y / 100 * self._BOX_HEIGHT
+        return self.raw_y / 100 * self._FRAME_HEIGHT
+
+    # Tolerance for crossbar boundary (impacts register fractionally
+    # above due to measurement noise — Haaland crossbar hit Y=45.22
+    # vs threshold 45.19, a 0.03 unit / 2mm gap)
+    _BAR_TOLERANCE = 0.5          # raw Y units (~2.7cm real)
 
     @property
     def in_goal(self) -> bool:
-        """Whether the ball entered the goal frame."""
-        return self._POST_LEFT <= self.raw_x <= self._POST_RIGHT and self.raw_y <= self._CROSSBAR
+        """Whether the ball entered the goal frame.
+
+        Posts use exact boundary (well-calibrated, 28/28 goals confirm).
+        Crossbar includes small tolerance for impact measurement noise.
+        """
+        in_x = self._POST_LEFT <= self.raw_x <= self._POST_RIGHT
+        in_y = self.raw_y <= (self._CROSSBAR + self._BAR_TOLERANCE)
+        return in_x and in_y
+
+    @property
+    def nearest_post_m(self) -> float:
+        """Distance to the nearest post in metres.
+
+        Negative if outside the goal (wide of the post).
+        """
+        post_half = GOAL_WIDTH_M / 2   # 3.66m
+        return post_half - self.offset_m
+
+    @property
+    def crossbar_distance_m(self) -> float:
+        """Distance below the crossbar in metres.
+
+        Negative if above the crossbar (over the bar).
+        """
+        return GOAL_HEIGHT_M - self.height_m
+
+    @property
+    def near_post(self) -> bool:
+        """Whether the ball was within 25cm of a post."""
+        return abs(self.nearest_post_m) <= self._NEAR_POST_M
+
+    @property
+    def near_bar(self) -> bool:
+        """Whether the ball was within 20cm of the crossbar."""
+        return abs(self.crossbar_distance_m) <= self._NEAR_BAR_M
+
+    @property
+    def kreuzeck(self) -> bool:
+        """Whether the ball hit near the junction of post and crossbar.
+
+        The holy corner — Kreuzeck in Austrian German.
+        """
+        return self.near_post and self.near_bar
 
     @property
     def height(self) -> str:
         if self.raw_y > self._CROSSBAR:
+            if self.in_goal:
+                return "high"      # crossbar impact that went in
             return "over"
         elif self.raw_y < 15:
             return "low"
@@ -306,6 +387,32 @@ class GoalPlacement:
         elif self.raw_x > 55:
             return "right"
         return "centre"
+
+    def side_relative(self, shooter_side: str) -> str:
+        """Side as near/far post relative to shooter position.
+
+        shooter_side: "left", "right", or "central" from ShotPosition.side.
+        Returns: "near post", "far post", "centre", or "wide left"/"wide right".
+        """
+        base = self.side
+
+        # Wide shots stay as-is
+        if base.startswith("wide"):
+            return base
+
+        # Centre shots or central shooter — keep absolute side
+        if base == "centre" or shooter_side == "central":
+            return base
+
+        # Near post = ball goes to same side as shooter
+        # Far post = ball goes to opposite side
+        same_side = (
+            (shooter_side == "left" and base == "left") or
+            (shooter_side == "right" and base == "right")
+        )
+        if same_side:
+            return "near post"
+        return "far post"
 
 
 # --- Core entities ---

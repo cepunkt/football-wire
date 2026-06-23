@@ -28,5 +28,8 @@ fi
 # Edit geometry if your layout differs.
 GEOMETRY="3840x2160+3840+0"
 
+# Ensure X11 display is set (default :1 for typical Manjaro setup)
+export DISPLAY="${DISPLAY:-:1}"
+
 maim -g "$GEOMETRY" "$CAPTURE_DIR/${FILENAME}.png"
 echo "Captured: $CAPTURE_DIR/${FILENAME}.png"

@@ -164,14 +164,14 @@ class TestCoordinates:
         shot = ShotPosition.from_raw(12, 38)
         assert shot.side == "left", f"Expected left, got {shot.side}"
         assert shot.zone == "inside box"
-        assert 14 < shot.distance_m < 16  # ~15m
+        assert 12 < shot.distance_m < 14  # ~13m (distance to nearest goal point)
 
     def test_normalize_opposite_end(self):
         """Alvarado at (76,37) — Mexican right (opposite end)."""
         shot = ShotPosition.from_raw(76, 37)
         assert shot.side == "right", f"Expected right, got {shot.side}"
         assert shot.zone == "outside box"
-        assert 26 < shot.distance_m < 28  # ~27m
+        assert 24 < shot.distance_m < 27  # ~26m (distance to nearest goal point)
 
     def test_central_shot(self):
         """Centre of pitch shot should be central."""
