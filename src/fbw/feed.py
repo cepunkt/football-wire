@@ -183,23 +183,6 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
     else:
         header_parts.append(f"{home_abbr} {home_score} - {away_score} {away_abbr} (# {match_id})")
 
-        # Lineup (one line per team) — normal mode only
-        for side, raw_team in [("home", home_raw), ("away", away_raw)]:
-            abbr = raw_team.get("Abbreviation", "???")
-            tactics = raw_team.get("Tactics", "?")
-            starters = []
-            for p in sorted((raw_team.get("Players") or []),
-                            key=lambda x: x.get("ShirtNumber", 99)):
-                if p.get("Status") == 1:
-                    def _get_name(field):
-                        v = p.get(field, [])
-                        if isinstance(v, list) and v and isinstance(v[0], dict):
-                            return v[0].get("Description", "")
-                        return str(v) if v else ""
-                    name = _get_name("ShortName") or _get_name("PlayerName") or "?"
-                    starters.append(name)
-            header_parts.append(f"{abbr} ({tactics}): {', '.join(starters)}")
-
     # Lore pointers — all modes
     header_parts.append("")
     header_parts.append(f"Lore: {lore_dir}/teams/{{{home_abbr},{away_abbr}}}.md")
@@ -216,16 +199,8 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
     with open(log_path, "w") as lf:
         lf.write(header_text + "\n")
 
-    # Wait for events
-    if not raw_events_path.exists():
-        print(f"Waiting for events on #{match_id}...")
-        try:
-            while not raw_events_path.exists():
-                time.sleep(2)
-        except KeyboardInterrupt:
-            return
-
-    # Engine
+    # Engine — created before event wait so pre-match info
+    # (lineups, venue) can be emitted while waiting for kickoff
     engine = SMFeedEngine(
         sm=sm,
         events_path=raw_events_path,
@@ -240,7 +215,24 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
         prefix=prefix,
     )
 
-    # Catchup
+    # Emit pre-match info as available
+    match_info = engine.check_match_info()
+    if match_info:
+        engine.emit(match_info)
+    lineups = engine.check_lineups()
+    if lineups:
+        engine.emit(lineups)
+
+    # Wait for events (match hasn't started yet)
+    if not raw_events_path.exists():
+        print(f"Waiting for events on #{match_id}...")
+        try:
+            while not raw_events_path.exists():
+                time.sleep(2)
+        except KeyboardInterrupt:
+            return
+
+    # Catchup (replay existing events through state machine)
     engine.catchup()
     live_tag = f"-- live ({match_label}, {parallel or 'full'}) --"
     print(live_tag if parallel else "-- live (state machine) --")

@@ -141,6 +141,9 @@ class SMFeedEngine:
         self._emitted_fields: dict[str, set[str]] = {}  # source_id → enriched fields
         self._pending_corrections: list[str] = []
 
+        # Info event tracking (emit once when data becomes available)
+        self._match_info_emitted: bool = False
+        self._lineups_emitted: bool = False
 
         # Feed log
         self.log_path = log_path
@@ -220,6 +223,210 @@ class SMFeedEngine:
                 lines.append(text)
 
         return lines
+
+    # FIFA API position codes
+    _POS_MAP = {0: "GK", 1: "DF", 2: "MF", 3: "FW"}
+
+    @staticmethod
+    def _get_localized(name_list, fallback="?") -> str:
+        if not name_list:
+            return fallback
+        for entry in name_list:
+            if isinstance(entry, dict) and entry.get("Locale") in ("en-GB", "en"):
+                return entry.get("Description", fallback)
+        if isinstance(name_list[0], dict):
+            return name_list[0].get("Description", fallback)
+        return fallback
+
+    def check_match_info(self) -> str | None:
+        """Emit match context once when data is available.
+
+        Full mode: venue, referee, coaches, group standing.
+        Minimal mode (emit_types set): venue and team names only.
+        """
+        if self._match_info_emitted:
+            return None
+
+        # Re-read match data
+        try:
+            with open(self.match_path) as f:
+                self.match_data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        minimal = self.emit_types is not None
+        lines = []
+
+        # Venue — all modes
+        stadium = self.match_data.get("Stadium") or {}
+        venue = self._get_localized(stadium.get("Name", []), "?")
+        attendance = self.match_data.get("Attendance")
+        venue_line = f"--- Venue: {venue}"
+        if attendance:
+            venue_line += f" | Attendance: {attendance}"
+        lines.append(venue_line)
+
+        # Team full names — minimal mode (primary feed has this in header)
+        if minimal:
+            for side in ("HomeTeam", "AwayTeam"):
+                raw_team = self.match_data.get(side) or {}
+                abbr = raw_team.get("Abbreviation", "???")
+                name = self._get_localized(
+                    raw_team.get("TeamName", []), abbr)
+                lines.append(f"--- {abbr}: {name}")
+
+        if not minimal:
+            # Referee
+            for official in (self.match_data.get("Officials") or []):
+                if official.get("OfficialType") == 1:  # main referee
+                    ref_name = self._get_localized(
+                        official.get("NameShort", []), "?")
+                    ref_country = official.get("IdCountry", "?")
+                    lines.append(f"--- Referee: {ref_name} ({ref_country})")
+                    break
+
+            # Head coaches
+            for side in ("HomeTeam", "AwayTeam"):
+                raw_team = self.match_data.get(side) or {}
+                abbr = raw_team.get("Abbreviation", "???")
+                for coach in (raw_team.get("Coaches") or []):
+                    if coach.get("Role") == 0:  # head coach
+                        cname = self._get_localized(
+                            coach.get("Alias", coach.get("Name", [])), "?")
+                        lines.append(f"--- {abbr} coach: {cname}")
+                        break
+
+            # Group standing
+            group_name = self.match_data.get("GroupName")
+            if group_name:
+                g_desc = self._get_localized(group_name, "")
+                standing_line = self._format_group_standing(g_desc)
+                if standing_line:
+                    lines.append(standing_line)
+
+        if not lines:
+            return None
+
+        self._match_info_emitted = True
+        return "\n".join(lines)
+
+    def _format_group_standing(self, group_desc: str) -> str | None:
+        """Build compact group standing from raw match data files."""
+        if not group_desc:
+            return None
+
+        config = get_config()
+        schedule_path = config.paths.raw_api_dir / "schedule.json"
+        matches_dir = config.paths.raw_matches_dir
+
+        try:
+            with open(schedule_path) as f:
+                schedule = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        # Find teams in this group
+        from .process import read_raw_json
+        standings = {}
+        for m in schedule:
+            gn = m.get("GroupName")
+            if not gn:
+                continue
+            gd = gn[0].get("Description", "") if isinstance(gn, list) and gn else ""
+            if gd != group_desc:
+                continue
+
+            ht = m.get("HomeTeam") or m.get("Home") or {}
+            at = m.get("AwayTeam") or m.get("Away") or {}
+            h_code = (ht or {}).get("Abbreviation", "???")
+            a_code = (at or {}).get("Abbreviation", "???")
+
+            for code in (h_code, a_code):
+                if code not in standings:
+                    standings[code] = {"pts": 0, "gf": 0, "ga": 0}
+
+            mid = m.get("IdMatch", "")
+            match_path = matches_dir / f"{mid}.json"
+            if not match_path.exists():
+                continue
+            md = read_raw_json(match_path)
+            if not md:
+                continue
+
+            mht = md.get("HomeTeam") or md.get("Home") or {}
+            mat = md.get("AwayTeam") or md.get("Away") or {}
+            hs, aws = mht.get("Score"), mat.get("Score")
+            if hs is None or aws is None:
+                continue
+
+            h_c = mht.get("Abbreviation", "???")
+            a_c = mat.get("Abbreviation", "???")
+            if h_c not in standings or a_c not in standings:
+                continue
+
+            standings[h_c]["gf"] += hs
+            standings[h_c]["ga"] += aws
+            standings[a_c]["gf"] += aws
+            standings[a_c]["ga"] += hs
+            if hs > aws:
+                standings[h_c]["pts"] += 3
+            elif hs < aws:
+                standings[a_c]["pts"] += 3
+            else:
+                standings[h_c]["pts"] += 1
+                standings[a_c]["pts"] += 1
+
+        if not standings:
+            return None
+
+        ranked = sorted(standings.items(),
+                        key=lambda x: (x[1]["pts"],
+                                       x[1]["gf"] - x[1]["ga"],
+                                       x[1]["gf"]),
+                        reverse=True)
+        teams_str = "  ".join(f"{code} {s['pts']}p" for code, s in ranked)
+        return f"--- {group_desc}:  {teams_str}"
+
+    def check_lineups(self) -> str | None:
+        """Emit lineups once when starters become available in match data.
+
+        The daemon updates match JSON on every poll. Lineups typically
+        appear ~1h before kickoff. When we detect starters, emit once
+        and set the flag.
+        """
+        if self._lineups_emitted:
+            return None
+
+        # Re-read match data (verify_score may have already refreshed it)
+        try:
+            with open(self.match_path) as f:
+                self.match_data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        lines = []
+        for side in ("HomeTeam", "AwayTeam"):
+            raw_team = self.match_data.get(side) or {}
+            abbr = raw_team.get("Abbreviation", "???")
+            tactics = raw_team.get("Tactics")
+            starters = []
+            for p in sorted((raw_team.get("Players") or []),
+                            key=lambda x: x.get("ShirtNumber", 99)):
+                if p.get("Status") == 1:
+                    num = p.get("ShirtNumber", "?")
+                    pos = self._POS_MAP.get(p.get("Position"), "??")
+                    name = _resolve_player_name(
+                        str(p.get("IdPlayer", "")))
+                    starters.append(f"#{num} {pos} {name}")
+
+            if not starters:
+                return None  # Not available yet
+
+            tactics_str = f" ({tactics})" if tactics else ""
+            lines.append(f"--- {abbr}{tactics_str}: {', '.join(starters)}")
+
+        self._lineups_emitted = True
+        return "\n".join(lines)
 
     def _drain_side_outputs(self):
         """Pick up side-channel events from the state machine.
@@ -327,6 +534,14 @@ class SMFeedEngine:
                     o.data["voided"] = True
             filtered.append(o)
         key_outputs = filtered
+
+        # Match info and lineups (emit if available, before catchup events)
+        match_info = self.check_match_info()
+        if match_info:
+            self.emit(match_info)
+        lineups_block = self.check_lineups()
+        if lineups_block:
+            self.emit(lineups_block)
 
         if key_outputs or score_corrections:
             self.emit("[Catchup]")
@@ -589,12 +804,20 @@ class SMFeedEngine:
         event_lines = self.collect_ready()
         stats_block = self.check_stats()
 
-        # Score verification when match data updated by daemon
+        # Match data updated by daemon — check score, info, lineups
         score_lines = []
+        match_info_block = None
+        lineups_block = None
         if match_changed:
             score_lines = self.verify_score()
+            match_info_block = self.check_match_info()
+            lineups_block = self.check_lineups()
 
         output = []
+        if match_info_block:
+            output.append(match_info_block)
+        if lineups_block:
+            output.append(lineups_block)
         if event_lines:
             output.extend(event_lines)
         if score_lines:
