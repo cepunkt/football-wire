@@ -85,6 +85,15 @@ def format_output(out: StateOutput, sm: MatchStateMachine) -> str | None:
 # are all in display.py now.
 
 
+# --- Parallel mode type filters ---
+
+# Minimal parallel: only game-changing events
+MINIMAL_TYPES = frozenset({
+    "goal", "goal_voided", "score_corrected", "period",
+    "red", "second_yellow_red", "var_review",
+})
+
+
 # --- State Machine Feed Engine ---
 
 class SMFeedEngine:
@@ -101,6 +110,8 @@ class SMFeedEngine:
         cycle_interval: int = 10,
         stats_interval: int = 15,
         log_path: Path | None = None,
+        emit_types: frozenset[str] | None = None,
+        prefix: str = "",
     ):
         self.sm = sm
         self.events_path = events_path
@@ -110,6 +121,8 @@ class SMFeedEngine:
         self.delay = delay
         self.cycle_interval = cycle_interval
         self.stats_interval = stats_interval
+        self.emit_types = emit_types
+        self.prefix = prefix
 
         # File positions
         self.events_pos = 0
@@ -136,7 +149,26 @@ class SMFeedEngine:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             self._log_file = open(log_path, "a")
 
+    def _should_emit(self, output: StateOutput) -> bool:
+        """Check whether an output passes the type filter."""
+        if self.emit_types is None:
+            return True
+        event_type = output.data.get("type", "")
+        action = output.data.get("action", "")
+        # Period start/end have type "period" with action "start"/"end"
+        if event_type in self.emit_types:
+            return True
+        # Score corrections are always emitted (safety)
+        if output.kind == OutputKind.CORRECTION and event_type == "score_corrected":
+            return True
+        return False
+
     def emit(self, text: str):
+        if self.prefix:
+            text = "\n".join(
+                f"{self.prefix}{line}" if line.strip() else line
+                for line in text.split("\n")
+            )
         print(text)
         if self._log_file:
             self._log_file.write(text + "\n")
@@ -267,13 +299,16 @@ class SMFeedEngine:
         score_corrections = self.verify_score()
 
         # Emit key events only (compact catchup)
-        key_types = {"goal", "sub", "yellow", "red", "second_yellow",
-                     "period", "goal_voided", "goal_enriched",
-                     "direction_determined", "var_review"}
+        # When emit_types is set (parallel mode), use that as the filter.
+        # Otherwise use the default catchup set.
+        catchup_types = self.emit_types if self.emit_types is not None else frozenset({
+            "goal", "sub", "yellow", "red", "second_yellow",
+            "period", "goal_voided", "goal_enriched",
+            "direction_determined", "var_review",
+        })
         key_outputs = [o for o in outputs
-                       if o.data.get("type") in key_types
-                       or o.data.get("action") in ("start", "end")
-                       or o.data.get("action") == "var_review"]
+                       if o.data.get("type") in catchup_types
+                       or o.data.get("action") in ("start", "end")]
 
         # Filter out voided goals — score verification already ran,
         # showing the bare goal without context is confusing
@@ -494,6 +529,10 @@ class SMFeedEngine:
             if buf.output.minute.sort_value >= 0:
                 self._last_minute = max(self._last_minute,
                                         buf.output.minute.sort_value)
+
+            if not self._should_emit(buf.output):
+                continue
+
             text = format_output(buf.output, self.sm)
             if text:
                 lines.append(text)
@@ -509,7 +548,7 @@ class SMFeedEngine:
         return lines
 
     def check_stats(self) -> str | None:
-        if self.stats_interval <= 0:
+        if self.stats_interval <= 0 or self.emit_types is not None:
             return None
         current = self._last_minute
         if current <= 0 or current - self._last_stats_minute < self.stats_interval:
@@ -570,6 +609,8 @@ class SMFeedEngine:
         lines = []
         self._buffer.sort(key=lambda b: b.output.minute.sort_value)
         for buf in self._buffer:
+            if not self._should_emit(buf.output):
+                continue
             text = format_output(buf.output, self.sm)
             if text:
                 lines.append(text)

@@ -487,6 +487,12 @@ def main():
     parser.add_argument("--config", help="Path to config file")
     parser.add_argument("--delay", type=int, default=0,
                         help="Anti-spoiler delay in seconds (default: 0)")
+    parallel_group = parser.add_mutually_exclusive_group()
+    parallel_group.add_argument("--pmin", action="store_true",
+                                help="Parallel minimal: goals, reds, periods only. "
+                                     "Prefixed with match label.")
+    parallel_group.add_argument("--pfull", action="store_true",
+                                help="Parallel full: all events, prefixed with match label.")
 
     args = parser.parse_args()
     config = init_config(args.config)
@@ -502,8 +508,9 @@ def main():
         if not mid:
             print(f"No match found for '{arg}'")
             return
+        parallel = "pmin" if args.pmin else ("pfull" if args.pfull else None)
         from .feed import cmd_watch_sm
-        cmd_watch_sm(config, mid, delay=args.delay or 0)
+        cmd_watch_sm(config, mid, delay=args.delay or 0, parallel=parallel)
 
 
 if __name__ == "__main__":

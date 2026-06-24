@@ -79,9 +79,15 @@ def cmd_snapshot(config, match_id: str | None = None):
 
 # --- Main ---
 
-def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10):
-    """Watch a match using the state machine engine."""
-    from .feed_sm import SMFeedEngine, FileChangeFlag as SMFileChangeFlag, format_output
+def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10,
+                  parallel: str | None = None):
+    """Watch a match using the state machine engine.
+
+    parallel: None (normal), "pmin" (minimal parallel), "pfull" (full parallel).
+    Parallel modes add a match-label prefix to every output line and
+    pmin additionally filters to game-changing events only.
+    """
+    from .feed_sm import SMFeedEngine, FileChangeFlag as SMFileChangeFlag, format_output, MINIMAL_TYPES
     from .state import MatchStateMachine, TeamState
     from .tournament import load_tournament, load_tournament_data
     from .process import read_raw_json
@@ -151,38 +157,55 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
     from .display import init_player_names
     init_player_names(raw_match)
 
-    # Preamble + lean header
+    # Parallel mode config
+    match_label = f"{home_abbr}-{away_abbr}"
+    emit_types = None
+    prefix = ""
+    if parallel == "pmin":
+        emit_types = MINIMAL_TYPES
+        prefix = f"{match_label}: "
+    elif parallel == "pfull":
+        prefix = f"{match_label}: "
+
+    # Header — preamble in all modes (LM needs reading instructions),
+    # lineups only in normal mode
+    home_score = home_raw.get("Score", 0) or 0
+    away_score = away_raw.get("Score", 0) or 0
+    lore_dir = config.tournament.lore_path
+
     header_parts = []
     if config.display.preamble:
         header_parts.append(format_preamble())
 
-    home_score = home_raw.get("Score", 0) or 0
-    away_score = away_raw.get("Score", 0) or 0
-    header_parts.append(f"{home_abbr} {home_score} - {away_score} {away_abbr} (# {match_id})")
+    if parallel:
+        mode_tag = "pmin" if parallel == "pmin" else "pfull"
+        header_parts.append(f"{home_abbr} {home_score} - {away_score} {away_abbr} (#{match_id}) [{mode_tag}]")
+    else:
+        header_parts.append(f"{home_abbr} {home_score} - {away_score} {away_abbr} (# {match_id})")
 
-    # Lineup (one line per team)
-    for side, raw_team in [("home", home_raw), ("away", away_raw)]:
-        abbr = raw_team.get("Abbreviation", "???")
-        tactics = raw_team.get("Tactics", "?")
-        starters = []
-        for p in sorted((raw_team.get("Players") or []),
-                        key=lambda x: x.get("ShirtNumber", 99)):
-            if p.get("Status") == 1:
-                def _get_name(field):
-                    v = p.get(field, [])
-                    if isinstance(v, list) and v and isinstance(v[0], dict):
-                        return v[0].get("Description", "")
-                    return str(v) if v else ""
-                name = _get_name("ShortName") or _get_name("PlayerName") or "?"
-                starters.append(name)
-        header_parts.append(f"{abbr} ({tactics}): {', '.join(starters)}")
+        # Lineup (one line per team) — normal mode only
+        for side, raw_team in [("home", home_raw), ("away", away_raw)]:
+            abbr = raw_team.get("Abbreviation", "???")
+            tactics = raw_team.get("Tactics", "?")
+            starters = []
+            for p in sorted((raw_team.get("Players") or []),
+                            key=lambda x: x.get("ShirtNumber", 99)):
+                if p.get("Status") == 1:
+                    def _get_name(field):
+                        v = p.get(field, [])
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            return v[0].get("Description", "")
+                        return str(v) if v else ""
+                    name = _get_name("ShortName") or _get_name("PlayerName") or "?"
+                    starters.append(name)
+            header_parts.append(f"{abbr} ({tactics}): {', '.join(starters)}")
 
-    # Lore pointers
-    lore_dir = config.tournament.lore_path
+    # Lore pointers — all modes
     header_parts.append("")
     header_parts.append(f"Lore: {lore_dir}/teams/{{{home_abbr},{away_abbr}}}.md")
 
     header_text = "\n".join(header_parts)
+
     print(header_text)
 
     # Feed log
@@ -196,8 +219,11 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
     # Wait for events
     if not raw_events_path.exists():
         print(f"Waiting for events on #{match_id}...")
-        while not raw_events_path.exists():
-            time.sleep(2)
+        try:
+            while not raw_events_path.exists():
+                time.sleep(2)
+        except KeyboardInterrupt:
+            return
 
     # Engine
     engine = SMFeedEngine(
@@ -210,11 +236,14 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
         cycle_interval=cycle_interval,
         stats_interval=config.display.stats_interval,
         log_path=log_path,
+        emit_types=emit_types,
+        prefix=prefix,
     )
 
     # Catchup
     engine.catchup()
-    print("-- live (state machine) --")
+    live_tag = f"-- live ({match_label}, {parallel or 'full'}) --"
+    print(live_tag if parallel else "-- live (state machine) --")
 
     # Watchdog
     watcher = SMFileChangeFlag(
@@ -246,7 +275,8 @@ def cmd_watch_sm(config, match_id: str, delay: int = 0, cycle_interval: int = 10
                 engine.read_new_enrichments()
                 engine.flush_all()
                 score = sm.score
-                print(f"FULL TIME: {home_abbr} {score[0]}-{score[1]} {away_abbr} (#{match_id})")
+                ft_line = f"FULL TIME: {home_abbr} {score[0]}-{score[1]} {away_abbr} (#{match_id})"
+                engine.emit(ft_line)
                 break
 
     except (KeyboardInterrupt, SystemExit):
@@ -266,6 +296,11 @@ def main():
     parser.add_argument("--delay", type=int, help="Delay seconds (enrichment + TV sync)")
     parser.add_argument("--cycle", type=int, help="Cycle interval seconds (default 10)")
     parser.add_argument("--snapshot", action="store_true", help="One-shot status")
+    parallel_group = parser.add_mutually_exclusive_group()
+    parallel_group.add_argument("--pmin", action="store_true",
+                                help="Parallel minimal: goals, reds, periods only")
+    parallel_group.add_argument("--pfull", action="store_true",
+                                help="Parallel full: all events, prefixed")
 
     args = parser.parse_args()
     config = init_config(args.config)
@@ -285,7 +320,8 @@ def main():
             sys.exit(1)
         print(f"Auto-detected: #{match_id}")
 
-    cmd_watch_sm(config, match_id, delay=delay, cycle_interval=cycle)
+    parallel = "pmin" if args.pmin else ("pfull" if args.pfull else None)
+    cmd_watch_sm(config, match_id, delay=delay, cycle_interval=cycle, parallel=parallel)
 
 
 if __name__ == "__main__":
