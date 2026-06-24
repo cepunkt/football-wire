@@ -118,14 +118,18 @@ def update_live_state(tracked: dict[str, dict], config) -> None:
 # --- Today's matches ---
 
 def get_trackable_matches(schedule: list[dict]) -> list[dict]:
-    """Get matches within a tracking window: 1 hour ago to 6 hours ahead.
+    """Get matches within a tracking window: 3 hours ago to 6 hours ahead.
 
     Handles midnight UTC boundary — a match at 00:00 UTC is trackable
     from 18:00 UTC the day before. American timezone tournaments commonly
     have late evening kickoffs that cross the date boundary.
+
+    The 3-hour lookback covers weather delays (FRA-IRQ hurricane ~1h),
+    daemon restarts mid-match, and extra time. If a match is already
+    finished, polling it produces no new data — no harm done.
     """
     now = datetime.now(timezone.utc)
-    window_start = now - timedelta(hours=1)
+    window_start = now - timedelta(hours=3)
     window_end = now + timedelta(hours=6)
     results = []
     for m in schedule:
@@ -164,7 +168,7 @@ def run_daemon(match_ids: list[str] | None = None, interval: int = 10):
     else:
         upcoming = get_trackable_matches(schedule)
         track_ids = [m.get("IdMatch") for m in upcoming if m.get("IdMatch")]
-        log(f"Auto-tracking {len(track_ids)} matches (1h ago to 6h ahead)")
+        log(f"Auto-tracking {len(track_ids)} matches (3h ago to 6h ahead)")
         for m in upcoming:
             mid = m.get("IdMatch", "?")
             label = _match_label(m)
