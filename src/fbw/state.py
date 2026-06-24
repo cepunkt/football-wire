@@ -150,6 +150,7 @@ class ScoreEvent:
     void_reason: str = ""
     shot_data: dict[str, Any] | None = None  # merged shot coordinates
     assist_player_id: str = ""
+    own_goal: bool = False
 
 
 @dataclass
@@ -218,11 +219,27 @@ class MatchState:
 
     @property
     def score(self) -> tuple[int, int]:
-        """Canonical score from non-voided goals."""
-        home = sum(1 for g in self.goals
-                   if g.team_id == self.home.team_id and not g.voided)
-        away = sum(1 for g in self.goals
-                   if g.team_id == self.away.team_id and not g.voided)
+        """Canonical score from non-voided goals.
+
+        Own goals count for the opposing team — the team_id on an OG
+        is the scorer's team, but the goal benefits the other side.
+        """
+        home = 0
+        away = 0
+        for g in self.goals:
+            if g.voided:
+                continue
+            if g.own_goal:
+                # OG: team_id is the scorer's team, goal goes to the other
+                if g.team_id == self.home.team_id:
+                    away += 1
+                else:
+                    home += 1
+            else:
+                if g.team_id == self.home.team_id:
+                    home += 1
+                else:
+                    away += 1
         return (home, away)
 
 
@@ -299,11 +316,27 @@ class MatchStateMachine:
 
     @property
     def score(self) -> tuple[int, int]:
-        """Canonical score from non-voided goals."""
-        home = sum(1 for g in self.goals
-                   if g.team_id == self.home.team_id and not g.voided)
-        away = sum(1 for g in self.goals
-                   if g.team_id == self.away.team_id and not g.voided)
+        """Canonical score from non-voided goals.
+
+        Own goals count for the opposing team — the team_id on an OG
+        is the scorer's team, but the goal benefits the other side.
+        """
+        home = 0
+        away = 0
+        for g in self.goals:
+            if g.voided:
+                continue
+            if g.own_goal:
+                # OG: team_id is the scorer's team, goal goes to the other
+                if g.team_id == self.home.team_id:
+                    away += 1
+                else:
+                    home += 1
+            else:
+                if g.team_id == self.home.team_id:
+                    home += 1
+                else:
+                    away += 1
         return (home, away)
 
     # --- Dedup ---
@@ -641,6 +674,7 @@ class MatchStateMachine:
             team_id=team_id,
             trust=inp.trust,
             shot_data=shot_data,
+            own_goal=own_goal,
         )
         self.goals.append(goal)
 

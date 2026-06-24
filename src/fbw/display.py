@@ -394,6 +394,11 @@ def _format_free_kick(
         fk_team = sm.home
     fk_abbr = fk_team.abbreviation
 
+    # Without direction, we can't compute distance to goal —
+    # but the free kick itself is still a fact
+    if not direction:
+        return f"{fk_abbr}"
+
     # Euclidean distance to goal centre (not just depth)
     # A wide free kick is further from goal than a central one
     # at the same depth — this affects danger classification.
