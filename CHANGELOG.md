@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.2 (2026-06-24)
+
+MD3 parallel match support. Two simultaneous group-stage deciders per kickoff slot.
+
+### Features
+- **Parallel feed modes** (`--pmin`, `--pfull`) — watch a secondary match alongside your primary feed
+- **`--pmin`** (parallel minimal) — goals, reds, periods, VAR, score corrections only. For the match you're not watching on TV.
+- **`--pfull`** (parallel full) — all events, for when both matches matter equally
+- **Match label prefix** — every line prefixed with `BIH-QAT:` or `SUI-CAN:` in parallel modes for clear visual separation in interleaved feeds
+- **Compact parallel header** — score line + mode tag, no lineups (preamble and lore pointers preserved — LM needs reading context)
+- **FULL TIME routed through engine** — respects prefix in parallel modes
+
+### Fixes
+- **Ctrl+C during event wait** — clean exit instead of traceback when interrupting before events arrive
+
+### Internal
+- `MINIMAL_TYPES` filter set in feed_sm.py
+- `_should_emit()` gate applied at collect_ready(), catchup(), and flush_all()
+- Per-line prefix in `emit()` — single output path for all modes
+- Stats blocks suppressed in filtered modes
+- Catchup respects emit_types when set
+- State machine and processing layer untouched
+
 ## 0.2.1 (2026-06-21)
 
 Live-tested across ESP 4-0 KSA and BEL 0-0 IRN. Architecture cleanup.
